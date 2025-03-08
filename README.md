@@ -1,15 +1,22 @@
 # Angel One Data Pipeline
 
+_Last Updated: March 8, 2025_
+
 ## Overview
 
 This project extracts data from Angel One API and stores it in DuckDB for analysis and reporting. It provides a reliable data pipeline for financial market data.
 
 ## Features
 
-- Secure connection to Angel One API
-- Data extraction for various financial instruments
-- Token values storage (master stock records)
-- Efficient storage in DuckDB database
+- ✅ Secure connection to Angel One API
+- ✅ Data extraction for various financial instruments
+- ✅ Token values storage (master stock records)
+  - Futures & Options (F&O) token processing
+  - Equity spot token mapping
+  - Automatic expiry date handling
+- ✅ Efficient storage in DuckDB database
+  - Structured schema for futures and equity tokens
+  - Referential integrity between instruments
 - Automated data refresh and synchronization
 
 ## Prerequisites
@@ -62,19 +69,33 @@ ANGEL_ONE_PIN=your_pin
 
 ```python
 # Basic usage example
-from src.angel_one_connector import AngelOneConnector
+from src.token_manager import TokenManager
+from src.db_manager import DBManager
 
-# Initialize connector
-connector = AngelOneConnector()
+# Initialize managers
+db_manager = DBManager()
+token_manager = TokenManager(db_manager)
 
-# Connect to API
-if connector.connect():
-    # Fetch and store token values
-    tokens = connector.get_tokens()
-    
-    # Work with the data
-    print(f"Retrieved {len(tokens)} tokens")
+# Fetch and process tokens
+if token_manager.fetch_tokens():
+    # Process and store both futures and equity tokens
+    success = token_manager.process_and_store_tokens()
+    print(f"Token processing {'successful' if success else 'failed'}")
 ```
+
+## Data Processing
+
+The pipeline handles two main types of financial instruments:
+
+1. **Futures Tokens**
+   - Filters FUTSTK instruments from NFO segment
+   - Automatically identifies current expiry contracts
+   - Processes expiry dates into standardized format
+
+2. **Equity Tokens**
+   - Maps futures to corresponding equity spot tokens
+   - Maintains referential integrity with futures
+   - Stores in normalized database structure
 
 ## Project Structure
 
@@ -83,6 +104,7 @@ if connector.connect():
 │   ├── angel_one_connector.py - Connection to Angel One API
 │   ├── db_manager.py - DuckDB operations handler
 │   └── ...
+├── main.py - Application entry point and testing script
 ├── .env - Environment variables (not tracked in git)
 ├── README.md - Project documentation
 ├── DEVELOPMENT_LOG.md - Development progress tracking

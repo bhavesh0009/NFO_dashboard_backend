@@ -1,1 +1,3 @@
  ...also keep updating development_log and readme as and when needed.
+
+ Whenever you do anyoperation with duckdb, alwyas ensure to check few records and test it post every such change. 
