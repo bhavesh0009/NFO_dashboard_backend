@@ -30,30 +30,29 @@ def test_connection():
 
 def test_token_processing():
     """Test the token processing functionality."""
+    # Initialize db_manager outside try block to ensure it's always defined
+    db_manager = None
     try:
         # Initialize managers
         logger.info("Initializing Token Manager...")
         db_manager = DBManager()
         token_manager = TokenManager(db_manager)
         
-        # Fetch all tokens
-        logger.info("Fetching token master data...")
-        if not token_manager.fetch_tokens():
-            logger.error("❌ Failed to fetch token data")
-            return
-        
         # Process and store required tokens
-        logger.info("Processing and storing required tokens...")
+        # This will check if tokens need refreshing first and only fetch if necessary
+        logger.info("Processing tokens...")
         if token_manager.process_and_store_tokens():
-            logger.info("✅ Successfully processed and stored required tokens")
+            logger.info("✅ Token processing completed successfully")
         else:
-            logger.error("❌ Failed to process and store tokens")
+            logger.error("❌ Failed to process tokens")
             
     except Exception as e:
         logger.error(f"❌ Error during token processing: {str(e)}")
         sys.exit(1)
     finally:
-        db_manager.close()
+        # Only close if db_manager was successfully created
+        if db_manager:
+            db_manager.close()
 
 def main():
     """Main function to run tests."""

@@ -6,7 +6,7 @@ Handles fetching and processing of token master data.
 import json
 import requests
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, time
 from typing import Optional, Dict, List, Any, Tuple
 from logzero import logger
 from src.db_manager import DBManager
@@ -19,6 +19,58 @@ class TokenManager:
         """Initialize TokenManager."""
         self.tokens_df: Optional[pd.DataFrame] = None
         self.db_manager = db_manager or DBManager()
+    
+    def needs_token_refresh(self, hard_refresh: bool = False) -> bool:
+        """
+        Check if tokens need to be refreshed.
+        
+        Tokens need refresh if:
+        1. hard_refresh is True, OR
+        2. No tokens exist in database, OR
+        3. Last update time is earlier than pre-market start time of current day
+        
+        Args:
+            hard_refresh: Force refresh regardless of last update time
+            
+        Returns:
+            bool: True if tokens need refresh, False otherwise
+        """
+        if hard_refresh:
+            logger.info("Hard refresh requested, will refresh tokens.")
+            return True
+            
+        # Get latest token update time
+        latest_update = self.db_manager.get_latest_token_update_time()
+        
+        # If no tokens exist, need refresh
+        if latest_update is None:
+            logger.info("No tokens found in database, refresh needed.")
+            return True
+            
+        # Get current date and pre-market start time
+        current_date = datetime.now().date()
+        pre_market_start_str = config.get('market', 'pre_market', 'start')
+        
+        try:
+            # Parse pre-market start time
+            pre_market_hour, pre_market_minute = map(int, pre_market_start_str.split(':'))
+            pre_market_start_time = time(pre_market_hour, pre_market_minute)
+            
+            # Combine current date with pre-market start time
+            pre_market_start_datetime = datetime.combine(current_date, pre_market_start_time)
+            
+            # Check if last update is before pre-market start
+            if latest_update < pre_market_start_datetime:
+                logger.info(f"Token data last updated at {latest_update}, which is before today's pre-market start ({pre_market_start_datetime}). Refresh needed.")
+                return True
+            else:
+                logger.info(f"Token data already refreshed at {latest_update}, which is after today's pre-market start ({pre_market_start_datetime}). No refresh needed. Skipping API call for 120K+ tokens.")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error checking token refresh need: {str(e)}")
+            # Default to refresh on error
+            return True
     
     def fetch_tokens(self) -> bool:
         """
@@ -251,14 +303,27 @@ class TokenManager:
             logger.error(f"❌ Error processing equity tokens: {str(e)}")
             return None
     
-    def process_and_store_tokens(self) -> bool:
+    def process_and_store_tokens(self, hard_refresh: bool = False) -> bool:
         """
         Process and store futures, options, and equity tokens.
         
+        Args:
+            hard_refresh: Force refresh regardless of last update time
+            
         Returns:
             bool: True if successful, False otherwise
         """
         try:
+            # Check if tokens need refresh before doing any API calls
+            if not self.needs_token_refresh(hard_refresh):
+                logger.info("✅ Skipping token refresh as tokens are already up to date.")
+                return True
+            
+            # Only fetch tokens if we actually need to refresh
+            if not self.fetch_tokens():
+                logger.error("❌ Failed to fetch token data")
+                return False
+            
             # Process futures tokens
             futures_df = self.process_futures_tokens()
             if futures_df is None:

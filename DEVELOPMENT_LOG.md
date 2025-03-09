@@ -199,6 +199,88 @@ This document tracks the development progress of the Angel One Data Pipeline pro
   - Integration with futures and equity tokens
   - Combined storage in unified schema
 
+### 2025-03-10: Token Refresh Optimization
+
+- Implemented smart token refresh mechanism:
+  - Added check for last token update timestamp
+  - Automatic skipping of refresh if tokens are already up-to-date for the current day
+  - Added hard refresh parameter for forcing updates when needed
+  - Optimized API calls by preventing unnecessary data fetching
+- Benefits achieved:
+  - Reduced API load and potential rate limiting issues
+  - Faster application startup when tokens are already current
+  - Better system performance during multiple daily executions
+  - More predictable and reliable operation
+- Technical implementation:
+  - Added timestamp tracking for token updates
+  - Integrated with market hours configuration
+  - Enhanced logging for refresh decisions
+  - Added developer force refresh option
+
+### 2025-03-10: API Call Optimization
+
+- Enhanced token refresh logic for maximum efficiency:
+  - Moved refresh check **before** any API calls
+  - Completely skips 120K+ token API call when refresh not needed
+  - Improved code flow in TokenManager for better API call management
+  - Significantly reduced unnecessary network traffic
+- Performance improvement:
+  - Reduced startup time from 2+ minutes to seconds when tokens already exist
+  - Eliminated unnecessary processing of large datasets
+  - Decreased API server load from redundant calls
+  - Better handling of rate limits on Angel One API
+- Technical enhancements:
+  - Refactored token processing workflow
+  - Consolidated API call decision logic in one place
+  - Improved logging for better visibility of optimization
+  - Updated main program flow to align with optimized approach
+
+### 2025-03-10: Database Recovery Mechanism
+
+- Implemented automatic database corruption recovery:
+  - Added detection of database corruption errors
+  - Implemented recovery process to recreate database when corrupted
+  - Enhanced error handling to prevent cascading failures
+  - Added graceful degradation for database connection issues
+- Benefits achieved:
+  - Self-healing database functionality
+  - Increased application resilience
+  - Better handling of improper database manipulations
+  - Clear logging for debugging corruption issues
+- Technical implementation:
+  - Added specialized exception handling for DuckDB serialization errors
+  - Implemented database file recreation process
+  - Enhanced error checking in DBManager initialization
+  - Added robust connection management
+- Use cases addressed:
+  - Recovery from improper shutdowns
+  - Handling of direct SQL manipulation outside the API
+  - Protection against database file corruption
+  - Automatic recovery without manual intervention
+
+### 2025-03-10: Database Management Utilities
+
+- Added comprehensive database utility tools:
+  - Implemented `truncate_tables` method in DBManager class
+  - Created standalone utility scripts for database operations
+  - Added support for database backup and restore
+  - Implemented database status checking
+- Key features:
+  - Safe table truncation with confirmation safeguards
+  - Automated backup naming with timestamps
+  - Status reporting with detailed database metrics
+  - Integrated error handling and logging
+- Use cases addressed:
+  - Test data cleanup without database corruption
+  - Safe database state management for development
+  - Quick database status checks
+  - Database backup before destructive operations
+- Implementation details:
+  - Added utilities directory with standalone scripts
+  - Created command-line interfaces with argparse
+  - Implemented robust error handling with user-friendly messages
+  - Added detailed documentation for all utility functions
+
 ## Challenges & Solutions
 
 ### Challenge 1: API Authentication

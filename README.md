@@ -17,6 +17,7 @@ This project extracts data from Angel One API and stores it in DuckDB for analys
   - Equity spot token mapping
   - Automatic expiry date handling
   - Strike price validation and distribution analysis
+  - Smart token refresh (avoids unnecessary API calls)
 - ✅ Efficient storage in DuckDB database
   - Unified schema for all token types (futures, options, equity)
   - Smart token type differentiation
@@ -134,10 +135,14 @@ db_manager = DBManager()
 token_manager = TokenManager(db_manager)
 
 # Fetch and process tokens
-if token_manager.fetch_tokens():
-    # Process and store both futures and equity tokens
-    success = token_manager.process_and_store_tokens()
-    print(f"Token processing {'successful' if success else 'failed'}")
+# The system will automatically check if tokens are already up-to-date
+# and skip the refresh if they were updated after today's pre-market start time
+success = token_manager.process_and_store_tokens()
+print(f"Token processing {'successful' if success else 'failed'}")
+
+# To force a hard refresh regardless of last update time
+success = token_manager.process_and_store_tokens(hard_refresh=True)
+print(f"Token hard refresh {'successful' if success else 'failed'}")
 ```
 
 ## Data Processing
@@ -162,6 +167,52 @@ The pipeline handles three main types of financial instruments in a unified stor
    - Maintains referential integrity with futures
    - Stores in normalized database structure
    - Automatic type conversion and validation
+
+## Database Utilities
+
+The project includes utility scripts for managing the database:
+
+### Database Utility Tool
+
+A comprehensive utility for database management operations:
+
+```bash
+# Check database status
+python utils/db_utility.py status
+
+# Truncate all tables (will prompt for confirmation)
+python utils/db_utility.py truncate
+
+# Truncate without confirmation
+python utils/db_utility.py truncate --no-confirm
+
+# Create a backup
+python utils/db_utility.py backup
+
+# Create a labeled backup
+python utils/db_utility.py backup --label pre_release
+
+# Restore from latest backup (will prompt for confirmation)
+python utils/db_utility.py restore
+
+# Restore from specific backup file
+python utils/db_utility.py restore --file db_backups/db_backup_20250309_160000.duckdb
+```
+
+You can also access these functions programmatically:
+
+```python
+from src.db_manager import DBManager
+
+# Initialize database manager
+db_manager = DBManager()
+
+# Truncate all tables
+db_manager.truncate_tables()
+
+# Close connection when done
+db_manager.close()
+```
 
 ## Database Schema
 
