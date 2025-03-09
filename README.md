@@ -8,22 +8,11 @@ This project extracts data from Angel One API and stores it in DuckDB for analys
 
 ## Features
 
-- ✅ Secure connection to Angel One API
-- ✅ Data extraction for various financial instruments
-- ✅ Token values storage (master stock records)
-  - Futures & Options (F&O) token processing
-    - Current expiry futures contracts
-    - Current expiry options with strike prices
-  - Equity spot token mapping
-  - Automatic expiry date handling
-  - Strike price validation and distribution analysis
-  - Smart token refresh (avoids unnecessary API calls)
-- ✅ Efficient storage in DuckDB database
-  - Unified schema for all token types (futures, options, equity)
-  - Smart token type differentiation
-  - Automated data validation
-  - Referential integrity between instruments
-- Automated data refresh and synchronization
+- ✅ **API Integration**: Secure Angel One API connection with token management
+- ✅ **Token Management**: F&O and equity token handling with expiry management
+- ✅ **Database Storage**: Efficient DuckDB storage with automated validation
+- ✅ **Equity Market Data**: OHLCV data from 2000-present with multiple intervals
+- ✅ **Process Automation**: Batched processing with rate limiting
 
 ## Prerequisites
 
@@ -104,135 +93,110 @@ database:
 # Additional configurations for token types, etc.
 ```
 
-The database serves as a central hub for:
+## Usage
 
-- Token master data (futures and equity)
-- Historical price data
-- Spot values for dashboard
-- Market analytics and metrics
+```bash
+# Test historical data fetch (without storing)
+python main.py history --limit 5 --verbose
 
-Access configuration values in code:
+# Test with storing data for 10 tokens
+python main.py history --limit 10 --store --verbose
 
-```python
-from src.config_manager import config
+# Process with ONE_MINUTE interval instead of default ONE_DAY
+python main.py history --limit 5 --interval ONE_MINUTE --verbose
 
-# Get API URL
-api_url = config.get('api', 'angel_one', 'token_master_url')
+# Process all equity tokens in batches
+python main.py batch
 
-# Get market hours
-market_start = config.get('market', 'trading_hours', 'start')
+# Process with custom batch size and limit
+python main.py batch --batch-size 10 --limit 50
+
+# Process with custom interval (ONE_MINUTE, FIVE_MINUTE, etc.)
+python main.py batch --batch-size 10 --limit 50 --interval ONE_HOUR
+
+# Test connection to Angel One API
+python main.py connection
+
+# Process and store tokens
+python main.py tokens
+
+# Run all basic tests
+python main.py
 ```
 
 ## Usage
 
-```python
-# Basic usage example
-from src.token_manager import TokenManager
-from src.db_manager import DBManager
+```bash
+# Test equity market data fetch (without storing)
+python main.py equity --limit 5 --verbose
 
-# Initialize managers
-db_manager = DBManager()
-token_manager = TokenManager(db_manager)
+# Test with storing data for 10 tokens
+python main.py equity --limit 10 --store --verbose
 
-# Fetch and process tokens
-# The system will automatically check if tokens are already up-to-date
-# and skip the refresh if they were updated after today's pre-market start time
-success = token_manager.process_and_store_tokens()
-print(f"Token processing {'successful' if success else 'failed'}")
+# Process with ONE_MINUTE interval instead of default ONE_DAY
+python main.py equity --limit 5 --interval ONE_MINUTE --verbose
 
-# To force a hard refresh regardless of last update time
-success = token_manager.process_and_store_tokens(hard_refresh=True)
-print(f"Token hard refresh {'successful' if success else 'failed'}")
+# Process all equity tokens in batches
+python main.py batch
+
+# Process with custom batch size and limit
+python main.py batch --batch-size 10 --limit 50
+
+# Process with custom interval (ONE_MINUTE, FIVE_MINUTE, etc.)
+python main.py batch --batch-size 10 --limit 50 --interval ONE_HOUR
+
+# Test connection to Angel One API
+python main.py connection
+
+# Process and store tokens
+python main.py tokens
+
+# Run all basic tests
+python main.py
 ```
 
 ## Data Processing
 
-The pipeline handles three main types of financial instruments in a unified storage system:
+The pipeline efficiently processes three instrument types:
 
-1. **Futures Tokens**
-   - Filters FUTSTK instruments from NFO segment
-   - Automatically identifies current expiry contracts
-   - Processes expiry dates into standardized format
-   - Handles numeric data validation
-
-2. **Options Tokens**
-   - Filters OPTSTK instruments from NFO segment
-   - Identifies current expiry contracts
-   - Validates and processes strike prices
-   - Provides strike price distribution analysis
-   - Maintains standardized date formats
-
-3. **Equity Tokens**
-   - Maps futures to corresponding equity spot tokens
-   - Maintains referential integrity with futures
-   - Stores in normalized database structure
-   - Automatic type conversion and validation
-
-## Database Utilities
-
-The project includes utility scripts for managing the database:
-
-### Database Utility Tool
-
-A comprehensive utility for database management operations:
-
-```bash
-# Check database status
-python utils/db_utility.py status
-
-# Truncate all tables (will prompt for confirmation)
-python utils/db_utility.py truncate
-
-# Truncate without confirmation
-python utils/db_utility.py truncate --no-confirm
-
-# Create a backup
-python utils/db_utility.py backup
-
-# Create a labeled backup
-python utils/db_utility.py backup --label pre_release
-
-# Restore from latest backup (will prompt for confirmation)
-python utils/db_utility.py restore
-
-# Restore from specific backup file
-python utils/db_utility.py restore --file db_backups/db_backup_20250309_160000.duckdb
-```
-
-You can also access these functions programmatically:
-
-```python
-from src.db_manager import DBManager
-
-# Initialize database manager
-db_manager = DBManager()
-
-# Truncate all tables
-db_manager.truncate_tables()
-
-# Close connection when done
-db_manager.close()
-```
+- **Futures**: Current expiry contracts from NFO segment with standardized dates
+- **Options**: Strike price validation with distribution analysis
+- **Equity**: Spot token mapping with referential integrity to futures
 
 ## Database Schema
 
-The system uses a unified token master table with the following structure:
+The system uses two primary tables:
 
 ```sql
+-- Token Master Table
 CREATE TABLE token_master (
     token VARCHAR,
     symbol VARCHAR,
     name VARCHAR,
     expiry DATE,
-    strike DECIMAL(18,6),  -- Particularly important for options
+    strike DECIMAL(18,6),
     lotsize INTEGER,
     instrumenttype VARCHAR,
     exch_seg VARCHAR,
     tick_size DECIMAL(18,6),
     token_type VARCHAR,  -- 'FUTURES', 'OPTIONS', or 'EQUITY'
-    futures_token VARCHAR,  -- Reference to futures token for equity
+    futures_token VARCHAR,
     created_at TIMESTAMP,
     PRIMARY KEY (token)
+)
+
+-- Historical Data Table
+CREATE TABLE historical_data (
+    token VARCHAR,
+    symbol_name VARCHAR,
+    timestamp TIMESTAMP,
+    open DECIMAL(18,6),
+    high DECIMAL(18,6),
+    low DECIMAL(18,6),
+    close DECIMAL(18,6),
+    volume BIGINT,
+    created_at TIMESTAMP,
+    PRIMARY KEY (token, timestamp)
 )
 ```
 
@@ -245,13 +209,23 @@ CREATE TABLE token_master (
 │   ├── angel_one_connector.py - Connection to Angel One API
 │   ├── config_manager.py    - Configuration management
 │   ├── db_manager.py        - DuckDB operations handler
+│   ├── equity_market_data_manager.py - Historical data processing
 │   ├── token_manager.py     - Token processing logic
-│   └── ...
+│   └── __pycache__/         - Python cache files
+├── scripts/
+│   └── fetch_all_historical_data.py - Batch equity_market_data_manager.py - Equity market data processing
+├── utils/
+│   ├── db_utility.py        - Database management tool
+│   ├── reset_for_testing.py - Testing reset utility
+│   └── truncate_db.py       - Database truncation utility
+├── logs/                    - Generated log files directory
+├── db_backups/              - Generated database backups
 ├── main.py                  - Application entry point
 ├── .env                     - Environment variables (not tracked)
-├── README.md               - Project documentation
-├── DEVELOPMENT_LOG.md      - Development progress tracking
-└── requirements.txt        - Project dependencies
+├── nfo_derivatives_hub.duckdb - Default database file
+├── README.md                - Project documentation
+├── DEVELOPMENT_LOG.md       - Development progress tracking
+└── requirements.txt         - Project dependencies
 ```
 
 ## License

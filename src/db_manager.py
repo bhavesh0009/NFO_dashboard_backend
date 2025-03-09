@@ -181,21 +181,95 @@ class DBManager:
             
     def truncate_tables(self) -> bool:
         """
-        Safely truncate all tables in the database.
+        Truncate all database tables.
         
         Returns:
             bool: True if successful, False otherwise
         """
         try:
-            # Truncate the token_master table
-            logger.info("Truncating token_master table...")
             self.conn.execute("TRUNCATE TABLE token_master")
-            
-            # Add any other tables that need truncating here as the application grows
-            # self.conn.execute("TRUNCATE TABLE other_table")
-            
-            logger.info(f"✅ Successfully truncated all tables in database: {self.db_path}")
+            logger.info("✅ All tables truncated")
             return True
         except Exception as e:
-            logger.error(f"❌ Error truncating database tables: {str(e)}")
+            logger.error(f"❌ Error truncating tables: {str(e)}")
+            return False
+            
+    def store_historical_data(self, token: str, name: str, data: List[Dict[str, Any]]) -> bool:
+        """
+        Store historical data for an equity token.
+        
+        Args:
+            token: Symbol token
+            name: Name of the equity token
+            data: List of historical data records
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # First, create the historical_data table if it doesn't exist
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS historical_data (
+                    token VARCHAR,
+                    symbol_name VARCHAR,
+                    timestamp TIMESTAMP,
+                    open DECIMAL(18,6),
+                    high DECIMAL(18,6),
+                    low DECIMAL(18,6),
+                    close DECIMAL(18,6),
+                    volume BIGINT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (token, timestamp)
+                )
+            """)
+            
+            # Format data for insertion
+            if not data:
+                logger.warning(f"No historical data to store for {name} ({token})")
+                return True
+                
+            # Convert data to dataframe for easier insertion
+            # Angel One API typically returns data as:
+            # [timestamp, open, high, low, close, volume]
+            records = []
+            for record in data:
+                if len(record) >= 6:  # Ensure record has all required fields
+                    records.append({
+                        'token': token,
+                        'symbol_name': name,
+                        'timestamp': record[0],  # timestamp
+                        'open': record[1],       # open
+                        'high': record[2],       # high
+                        'low': record[3],        # low
+                        'close': record[4],      # close
+                        'volume': record[5]      # volume
+                    })
+            
+            if not records:
+                logger.warning(f"Failed to parse historical data for {name} ({token})")
+                return False
+                
+            # Convert to DataFrame and insert
+            df = pd.DataFrame(records)
+            
+            # Insert data with conflict resolution 
+            self.conn.execute("""
+                INSERT INTO historical_data 
+                (token, symbol_name, timestamp, open, high, low, close, volume)
+                SELECT token, symbol_name, timestamp, open, high, low, close, volume
+                FROM df
+                ON CONFLICT(token, timestamp) DO UPDATE SET
+                    symbol_name = EXCLUDED.symbol_name,
+                    open = EXCLUDED.open,
+                    high = EXCLUDED.high,
+                    low = EXCLUDED.low,
+                    close = EXCLUDED.close,
+                    volume = EXCLUDED.volume
+            """)
+            
+            logger.info(f"✅ Successfully stored {len(records)} historical records for {name} ({token})")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error storing historical data for {name} ({token}): {str(e)}")
             return False 

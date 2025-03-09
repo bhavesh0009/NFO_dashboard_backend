@@ -235,6 +235,70 @@ This document tracks the development progress of the Angel One Data Pipeline pro
   - Improved logging for better visibility of optimization
   - Updated main program flow to align with optimized approach
 
+### 2025-03-10: Historical Data Processing Implementation
+
+- Created comprehensive historical data processing system:
+  - Implemented `HistoricalDataManager` class for fetching equity historical data
+  - Added database schema for historical OHLCV records
+  - Created batched processing with API rate limiting
+  - Implemented data validation and storage routines
+- Key features:
+  - Fetches historical data back to 2010 for all equity tokens
+  - Uses daily interval for comprehensive market analysis
+  - Handles API responses with proper error handling
+  - Stores data with efficient duplicate handling
+- Technical implementation:
+  - Added `store_historical_data` method to DBManager
+  - Created test utilities for verifying data fetch and storage
+  - Implemented comprehensive production-ready script for full data processing
+  - Added logging with file output for progress tracking
+- Use cases addressed:
+  - Complete historical data for equity market analysis
+  - Chart generation for technical analysis
+  - Backtesting trading strategies
+  - Market trend analysis over extended periods
+
+### 2025-03-11: Codebase Consolidation and CLI Enhancement
+
+- Refactored testing and execution structure:
+  - Consolidated separate test scripts into a unified main.py interface
+  - Added comprehensive command-line interface with subcommands
+  - Implemented argument parsing for flexible execution options
+  - Maintained full functionality with simplified structure
+- Key improvements:
+  - Simplified codebase with less file fragmentation
+  - Created consistent entry point for all operations
+  - Enhanced usability with standardized CLI interface
+  - Maintained full functionality of separate scripts
+- Technical implementation:
+  - Used argparse for creating subcommands and options
+  - Implemented modular function design for each operation
+  - Added proper exit code handling for scripting support
+  - Created sensible defaults for common operations
+- Benefits:
+  - Reduced codebase complexity
+  - Improved developer experience
+  - Better consistency across operations
+  - Lower barrier to entry for new users
+
+### 2025-03-12: Historical Data Range Extension
+
+- Extended historical data range capability:
+  - Changed default from date from 5 days ago to January 1, 2000
+  - Maintained the Angel One API date format requirements
+  - Enabled comprehensive historical analysis over decades
+  - Preserved API load management with rate limiting
+- Technical changes:
+  - Updated `_get_date_params` method in HistoricalDataManager
+  - Fixed rate limiting to 0.25 seconds between requests
+  - Reduced batch delay to 2 seconds for improved throughput
+  - Enhanced progress reporting for long-running operations
+- Benefits:
+  - Complete historical backfill capability for equity tokens
+  - Deeper market trend analysis across multiple market cycles
+  - More robust backtesting capabilities with extended data
+  - Improved historical performance metrics
+
 ### 2025-03-10: Database Recovery Mechanism
 
 - Implemented automatic database corruption recovery:

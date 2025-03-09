@@ -1,0 +1,230 @@
+"""
+Equity market data manager for Angel One API.
+Handles fetching and processing spot equity price data.
+"""
+
+import pandas as pd
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta
+from logzero import logger
+import time
+
+from src.angel_one_connector import AngelOneConnector
+from src.db_manager import DBManager
+from src.config_manager import config
+
+class EquityMarketDataManager:
+    """Manages fetching and processing of spot equity market data."""
+    
+    def __init__(self, connector: Optional[AngelOneConnector] = None, db_manager: Optional[DBManager] = None):
+        """
+        Initialize equity market data manager.
+        
+        Args:
+            connector: Optional Angel One connector instance
+            db_manager: Optional database manager instance
+        """
+        self.connector = connector or AngelOneConnector()
+        self.db_manager = db_manager or DBManager()
+        
+        # Connect to Angel One API if not already connected
+        if not hasattr(self.connector, 'api') or self.connector.api is None:
+            logger.info("Connecting to Angel One API")
+            self.connector.connect()
+    
+    def get_equity_tokens(self, limit: int = 5) -> pd.DataFrame:
+        """
+        Get equity tokens from database.
+        
+        Args:
+            limit: Maximum number of tokens to fetch (default: 5 for testing)
+            
+        Returns:
+            pd.DataFrame: DataFrame with equity token information
+        """
+        try:
+            query = """
+                SELECT token, name, exch_seg
+                FROM token_master
+                WHERE token_type = 'EQUITY'
+                LIMIT ?
+            """
+            result = self.db_manager.conn.execute(query, [limit]).fetchdf()
+            logger.info(f"✅ Retrieved {len(result)} equity tokens from database")
+            return result
+        except Exception as e:
+            logger.error(f"❌ Error fetching equity tokens: {str(e)}")
+            return pd.DataFrame()
+    
+    def _get_date_params(self) -> tuple:
+        """
+        Get fromdate and todate parameters for market data query.
+        
+        Returns:
+            tuple: (fromdate, todate) formatted strings
+        """
+        # From Angel One API example, format is: "YYYY-MM-DD HH:MM"
+        
+        # From date is set to January 1, 2000 as requested
+        from_date = "2000-01-01 09:15"
+        
+        # To date is yesterday at market close
+        yesterday = datetime.now() - timedelta(days=1)
+        to_date = yesterday.strftime("%Y-%m-%d") + " 15:30"
+        
+        logger.info(f"Date range for equity market data: {from_date} to {to_date}")
+        return from_date, to_date
+    
+    def fetch_equity_market_data(self, token: str, exchange: str, name: str, interval: str = "ONE_DAY") -> Optional[Dict[str, Any]]:
+        """
+        Fetch market data for a single equity token.
+        
+        Args:
+            token: Symbol token
+            exchange: Exchange segment (NSE)
+            name: Name of the equity token (for logging)
+            interval: Data interval (ONE_MINUTE, ONE_DAY, etc.) Default: ONE_DAY
+            
+        Returns:
+            Optional[Dict[str, Any]]: Market data response or None if failed
+        """
+        from_date, to_date = self._get_date_params()
+        
+        params = {
+            "exchange": exchange,
+            "symboltoken": token,
+            "interval": interval,
+            "fromdate": from_date,
+            "todate": to_date
+        }
+        
+        try:
+            logger.info(f"Fetching equity market data for {name} ({token}) with {interval} interval")
+            market_data = self.connector.api.getCandleData(params)
+            
+            if market_data.get('status'):
+                logger.info(f"✅ Successfully fetched {len(market_data.get('data', []))} records for {name}")
+                return market_data
+            else:
+                logger.error(f"❌ Failed to fetch equity market data for {name}: {market_data.get('message', 'Unknown error')}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Error fetching equity market data for {name}: {str(e)}")
+            return None
+    
+    def process_equity_market_data(self, limit: int = 5, interval: str = "ONE_DAY") -> Dict[str, Any]:
+        """
+        Process market data for equity tokens.
+        
+        Args:
+            limit: Maximum number of tokens to process (default: 5 for testing)
+            interval: Data interval (ONE_MINUTE, ONE_DAY, etc.) Default: ONE_DAY
+            
+        Returns:
+            Dict[str, Any]: Results summary with success and error counts
+        """
+        equity_tokens = self.get_equity_tokens(limit)
+        
+        if equity_tokens.empty:
+            logger.error("No equity tokens found")
+            return {"success": 0, "errors": 0, "message": "No equity tokens found"}
+        
+        results = {
+            "success": 0,
+            "errors": 0,
+            "data": {}
+        }
+        
+        for _, row in equity_tokens.iterrows():
+            token = row['token']
+            exchange = row['exch_seg']
+            name = row['name']
+            
+            # Fetch market data for this token
+            market_data = self.fetch_equity_market_data(token, exchange, name, interval=interval)
+            
+            if market_data and market_data.get('status'):
+                data = market_data.get('data', [])
+                results["success"] += 1
+                results["data"][token] = {
+                    "name": name,
+                    "records": len(data),
+                    "sample": data[:2]  # Log first 2 records as sample
+                }
+            else:
+                results["errors"] += 1
+            
+            # Add a small delay to avoid API rate limits
+            time.sleep(0.25)
+        
+        logger.info(f"✅ Equity market data processing complete. Success: {results['success']}, Errors: {results['errors']}")
+        return results
+        
+    def fetch_and_store_equity_market_data(self, limit: int = 5, interval: str = "ONE_DAY") -> Dict[str, Any]:
+        """
+        Fetch and store market data for equity tokens.
+        
+        Args:
+            limit: Maximum number of tokens to process (default: 5 for testing)
+            interval: Data interval (ONE_MINUTE, ONE_DAY, etc.) Default: ONE_DAY
+            
+        Returns:
+            Dict[str, Any]: Results summary with success and error counts
+        """
+        equity_tokens = self.get_equity_tokens(limit)
+        
+        if equity_tokens.empty:
+            logger.error("No equity tokens found")
+            return {"success": 0, "errors": 0, "message": "No equity tokens found"}
+        
+        results = {
+            "success": 0,
+            "errors": 0,
+            "data": {}
+        }
+        
+        for _, row in equity_tokens.iterrows():
+            token = row['token']
+            exchange = row['exch_seg']
+            name = row['name']
+            
+            # Fetch market data for this token
+            market_data = self.fetch_equity_market_data(token, exchange, name, interval=interval)
+            
+            if market_data and market_data.get('status'):
+                data = market_data.get('data', [])
+                
+                # Store the data in the database
+                if self.db_manager.store_historical_data(token, name, data):
+                    results["success"] += 1
+                    results["data"][token] = {
+                        "name": name,
+                        "records": len(data),
+                        "sample": data[:2]  # Log first 2 records as sample
+                    }
+                else:
+                    results["errors"] += 1
+                    logger.error(f"Failed to store equity market data for {name} ({token})")
+            else:
+                results["errors"] += 1
+            
+            # Add a small delay to avoid API rate limits
+            time.sleep(0.25)
+        
+        logger.info(f"✅ Equity market data fetch and store complete. Success: {results['success']}, Errors: {results['errors']}")
+        return results
+
+if __name__ == "__main__":
+    # Test the equity market data manager
+    try:
+        logger.info("Testing Equity Market Data Manager")
+        manager = EquityMarketDataManager()
+        results = manager.process_equity_market_data(limit=5)
+        
+        # Log sample data
+        for token, data in results.get("data", {}).items():
+            logger.info(f"Sample data for {data['name']} ({token}): {data['sample']}")
+            
+    except Exception as e:
+        logger.error(f"Test failed with error: {str(e)}") 
