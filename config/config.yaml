@@ -17,16 +17,18 @@ market:
 
 # Database Configuration
 database:
-  default_path: "market_data.duckdb"
+  default_path: "nfo_derivatives_hub.duckdb"  # Central hub for NFO derivatives data (tokens, historical, and spot values)
 
 # Token Types
 token_types:
   futures: "FUTURES"
   equity: "EQUITY"
+  options: "OPTIONS"
 
 # Instrument Types
 instrument_types:
   futures_stock: "FUTSTK"
+  options_stock: "OPTSTK"
 
 # Exchange Segments
 exchange_segments:

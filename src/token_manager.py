@@ -79,7 +79,7 @@ class TokenManager:
             
             # Check all distinct expiry formats
             distinct_expiry_formats = futures_df['expiry'].unique()
-            logger.info("\nAll distinct expiry formats found:")
+            logger.info("\nAll distinct expiry formats found in futures:")
             for expiry in sorted(distinct_expiry_formats):
                 logger.info(f"Expiry format: {expiry}")
             
@@ -117,6 +117,80 @@ class TokenManager:
             
         except Exception as e:
             logger.error(f"❌ Error processing futures tokens: {str(e)}")
+            return None
+    
+    def process_options_tokens(self) -> Optional[pd.DataFrame]:
+        """
+        Process options stocks with nearest expiry date.
+        
+        Returns:
+            Optional[pd.DataFrame]: Filtered options tokens
+        """
+        if self.tokens_df is None:
+            logger.error("❌ No token data available. Call fetch_tokens() first.")
+            return None
+            
+        try:
+            # Get configuration values
+            options_type = config.get('instrument_types', 'options_stock')
+            nfo_segment = config.get('exchange_segments', 'nfo')
+            expiry_format = config.get('date_formats', 'expiry')
+            db_date_format = config.get('date_formats', 'db_date')
+            
+            # Filter options stocks
+            options_df = self.tokens_df[
+                (self.tokens_df['instrumenttype'] == options_type) & 
+                (self.tokens_df['exch_seg'] == nfo_segment)
+            ].copy()
+            
+            if options_df.empty:
+                logger.error("❌ No options tokens found")
+                return None
+            
+            # Check all distinct expiry formats
+            distinct_expiry_formats = options_df['expiry'].unique()
+            logger.info("\nAll distinct expiry formats found in options:")
+            for expiry in sorted(distinct_expiry_formats):
+                logger.info(f"Expiry format: {expiry}")
+            
+            # Convert expiry strings to dates
+            options_df['expiry_date'] = pd.to_datetime(
+                options_df['expiry'], 
+                format=expiry_format
+            ).dt.date
+            
+            # Find minimum expiry and filter
+            min_expiry = options_df['expiry_date'].min()
+            current_expiry_options = options_df[
+                options_df['expiry_date'] == min_expiry
+            ].copy()
+            
+            # Convert expiry to standard format
+            current_expiry_options['expiry'] = current_expiry_options['expiry_date'].apply(
+                lambda x: x.strftime(db_date_format)
+            )
+            
+            # Add token type and futures token reference
+            current_expiry_options['token_type'] = config.get('token_types', 'options')
+            current_expiry_options['futures_token'] = None  # Will be mapped later
+            
+            # Ensure numeric columns are properly typed
+            current_expiry_options['strike'] = pd.to_numeric(current_expiry_options['strike'], errors='coerce')
+            current_expiry_options['lotsize'] = pd.to_numeric(current_expiry_options['lotsize'], errors='coerce')
+            current_expiry_options['tick_size'] = pd.to_numeric(current_expiry_options['tick_size'], errors='coerce')
+            
+            # Drop temporary column
+            current_expiry_options.drop('expiry_date', axis=1, inplace=True)
+            
+            # Log some statistics about the options
+            logger.info(f"✅ Found {len(current_expiry_options)} current expiry options")
+            logger.info("\nOptions strike price distribution:")
+            logger.info(current_expiry_options.groupby('name')['strike'].agg(['count', 'min', 'max']).head())
+            
+            return current_expiry_options
+            
+        except Exception as e:
+            logger.error(f"❌ Error processing options tokens: {str(e)}")
             return None
     
     def process_equity_tokens(self, futures_df: pd.DataFrame) -> Optional[pd.DataFrame]:
@@ -179,7 +253,7 @@ class TokenManager:
     
     def process_and_store_tokens(self) -> bool:
         """
-        Process and store both futures and equity tokens.
+        Process and store futures, options, and equity tokens.
         
         Returns:
             bool: True if successful, False otherwise
@@ -190,13 +264,18 @@ class TokenManager:
             if futures_df is None:
                 return False
             
+            # Process options tokens
+            options_df = self.process_options_tokens()
+            if options_df is None:
+                return False
+            
             # Process equity tokens
             equity_df = self.process_equity_tokens(futures_df)
             if equity_df is None:
                 return False
             
             # Combine DataFrames
-            combined_df = pd.concat([futures_df, equity_df], ignore_index=True)
+            combined_df = pd.concat([futures_df, options_df, equity_df], ignore_index=True)
             
             # Store in database
             return self.db_manager.store_tokens(combined_df)

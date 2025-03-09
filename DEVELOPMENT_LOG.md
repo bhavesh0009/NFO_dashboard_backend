@@ -156,7 +156,7 @@ This document tracks the development progress of the Angel One Data Pipeline pro
 - Key configurations added:
   - API endpoints and parameters
   - Market trading hours
-  - Database settings
+  - Database settings (using nfo_derivatives_hub.duckdb as central data store)
   - Token types and instrument types
   - Exchange segments
   - Date format standardization
@@ -170,6 +170,34 @@ This document tracks the development progress of the Angel One Data Pipeline pro
   - Database settings
   - Date format specifications
   - Exchange and instrument type definitions
+- Database scope defined:
+  - Token master data storage
+  - Historical price data (planned)
+  - Spot values for dashboard (planned)
+  - Market analytics and metrics (planned)
+
+### 2025-03-09: Options Token Processing Implementation
+
+- Added comprehensive options token processing:
+  - Implemented `process_options_tokens` method in TokenManager
+  - Added configuration for options instrument type (OPTSTK)
+  - Enhanced token type system to include OPTIONS
+  - Added strike price validation and analysis
+- Key features implemented:
+  - Current expiry options filtering
+  - Strike price distribution analysis
+  - Standardized date format handling
+  - Integration with existing token storage
+- Benefits achieved:
+  - Complete F&O token coverage
+  - Better market analysis capabilities
+  - Enhanced data validation
+  - Improved debugging with strike price statistics
+- Successfully tested:
+  - Options token extraction
+  - Strike price validation
+  - Integration with futures and equity tokens
+  - Combined storage in unified schema
 
 ## Challenges & Solutions
 

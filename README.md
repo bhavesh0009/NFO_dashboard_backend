@@ -12,10 +12,13 @@ This project extracts data from Angel One API and stores it in DuckDB for analys
 - ✅ Data extraction for various financial instruments
 - ✅ Token values storage (master stock records)
   - Futures & Options (F&O) token processing
+    - Current expiry futures contracts
+    - Current expiry options with strike prices
   - Equity spot token mapping
   - Automatic expiry date handling
+  - Strike price validation and distribution analysis
 - ✅ Efficient storage in DuckDB database
-  - Unified schema for all token types
+  - Unified schema for all token types (futures, options, equity)
   - Smart token type differentiation
   - Automated data validation
   - Referential integrity between instruments
@@ -93,8 +96,19 @@ market:
     start: "15:30"
     end: "15:45"
 
-# Additional configurations for database, token types, etc.
+# Database Configuration
+database:
+  default_path: "nfo_derivatives_hub.duckdb"  # Central hub for NFO derivatives data
+
+# Additional configurations for token types, etc.
 ```
+
+The database serves as a central hub for:
+
+- Token master data (futures and equity)
+- Historical price data
+- Spot values for dashboard
+- Market analytics and metrics
 
 Access configuration values in code:
 
@@ -128,7 +142,7 @@ if token_manager.fetch_tokens():
 
 ## Data Processing
 
-The pipeline handles two main types of financial instruments in a unified storage system:
+The pipeline handles three main types of financial instruments in a unified storage system:
 
 1. **Futures Tokens**
    - Filters FUTSTK instruments from NFO segment
@@ -136,7 +150,14 @@ The pipeline handles two main types of financial instruments in a unified storag
    - Processes expiry dates into standardized format
    - Handles numeric data validation
 
-2. **Equity Tokens**
+2. **Options Tokens**
+   - Filters OPTSTK instruments from NFO segment
+   - Identifies current expiry contracts
+   - Validates and processes strike prices
+   - Provides strike price distribution analysis
+   - Maintains standardized date formats
+
+3. **Equity Tokens**
    - Maps futures to corresponding equity spot tokens
    - Maintains referential integrity with futures
    - Stores in normalized database structure
@@ -152,12 +173,12 @@ CREATE TABLE token_master (
     symbol VARCHAR,
     name VARCHAR,
     expiry DATE,
-    strike DECIMAL(18,6),
+    strike DECIMAL(18,6),  -- Particularly important for options
     lotsize INTEGER,
     instrumenttype VARCHAR,
     exch_seg VARCHAR,
     tick_size DECIMAL(18,6),
-    token_type VARCHAR,  -- 'FUTURES' or 'EQUITY'
+    token_type VARCHAR,  -- 'FUTURES', 'OPTIONS', or 'EQUITY'
     futures_token VARCHAR,  -- Reference to futures token for equity
     created_at TIMESTAMP,
     PRIMARY KEY (token)
