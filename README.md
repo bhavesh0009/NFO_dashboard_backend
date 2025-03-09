@@ -96,37 +96,6 @@ database:
 ## Usage
 
 ```bash
-# Test historical data fetch (without storing)
-python main.py history --limit 5 --verbose
-
-# Test with storing data for 10 tokens
-python main.py history --limit 10 --store --verbose
-
-# Process with ONE_MINUTE interval instead of default ONE_DAY
-python main.py history --limit 5 --interval ONE_MINUTE --verbose
-
-# Process all equity tokens in batches
-python main.py batch
-
-# Process with custom batch size and limit
-python main.py batch --batch-size 10 --limit 50
-
-# Process with custom interval (ONE_MINUTE, FIVE_MINUTE, etc.)
-python main.py batch --batch-size 10 --limit 50 --interval ONE_HOUR
-
-# Test connection to Angel One API
-python main.py connection
-
-# Process and store tokens
-python main.py tokens
-
-# Run all basic tests
-python main.py
-```
-
-## Usage
-
-```bash
 # Test equity market data fetch (without storing)
 python main.py equity --limit 5 --verbose
 
@@ -209,11 +178,11 @@ CREATE TABLE historical_data (
 │   ├── angel_one_connector.py - Connection to Angel One API
 │   ├── config_manager.py    - Configuration management
 │   ├── db_manager.py        - DuckDB operations handler
-│   ├── equity_market_data_manager.py - Historical data processing
+│   ├── equity_market_data_manager.py - Equity market data processing
 │   ├── token_manager.py     - Token processing logic
 │   └── __pycache__/         - Python cache files
 ├── scripts/
-│   └── fetch_all_historical_data.py - Batch equity_market_data_manager.py - Equity market data processing
+│   └── fetch_all_equity_data.py - Batch equity market data processing
 ├── utils/
 │   ├── db_utility.py        - Database management tool
 │   ├── reset_for_testing.py - Testing reset utility
@@ -234,4 +203,4 @@ CREATE TABLE historical_data (
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please feel free to submit a Pull Request. 

@@ -28,6 +28,7 @@ sys.path.append(parent_dir)
 
 from src.equity_market_data_manager import EquityMarketDataManager
 from src.db_manager import DBManager
+from src.config_manager import config
 
 def setup_logging():
     """Setup logging with file output."""
@@ -38,7 +39,7 @@ def setup_logging():
     today = datetime.now().strftime('%Y%m%d')
     logfile(os.path.join(log_dir, f'equity_market_data_{today}.log'))
 
-def fetch_all_equity_data(batch_size=5, limit=None, verbose=False, interval="ONE_DAY"):
+def fetch_all_equity_data(batch_size=5, limit=None, verbose=False, interval=None):
     """
     Fetch and store equity market data for all equity tokens.
     
@@ -46,13 +47,17 @@ def fetch_all_equity_data(batch_size=5, limit=None, verbose=False, interval="ONE
         batch_size: Number of tokens to process in each batch
         limit: Maximum number of tokens to process (None for all)
         verbose: Whether to print sample data
-        interval: Data interval (ONE_MINUTE, ONE_DAY, etc.) Default: ONE_DAY
+        interval: Data interval (ONE_MINUTE, ONE_DAY, etc.) If None, uses config default
     
     Returns:
         dict: Results summary
     """
     try:
         setup_logging()
+        
+        # Use default interval from config if none provided
+        if interval is None:
+            interval = config.get('equity_market_data', 'default_interval')
         
         logger.info("=== Starting Equity Market Data Fetch ===")
         logger.info(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -84,6 +89,10 @@ def fetch_all_equity_data(batch_size=5, limit=None, verbose=False, interval="ONE
             "total": total_tokens,
             "batches": []
         }
+        
+        # Get rate limiting configurations
+        request_delay = config.get('equity_market_data', 'rate_limiting', 'request_delay')
+        batch_delay = config.get('equity_market_data', 'rate_limiting', 'batch_delay')
         
         # Process in batches
         for i in range(0, total_tokens, batch_size):
@@ -150,7 +159,7 @@ def fetch_all_equity_data(batch_size=5, limit=None, verbose=False, interval="ONE
                     logger.error(f"❌ Failed to fetch data for {name}")
                 
                 # Add a small delay to avoid API rate limits
-                time.sleep(0.25)
+                time.sleep(request_delay)
             
             results["batches"].append(batch_results)
             
@@ -159,8 +168,8 @@ def fetch_all_equity_data(batch_size=5, limit=None, verbose=False, interval="ONE
             
             # Add a larger delay between batches
             if i + batch_size < total_tokens:
-                logger.info(f"Waiting 2 seconds before next batch...")
-                time.sleep(2)  # Set to 2 seconds between batches
+                logger.info(f"Waiting {batch_delay} seconds before next batch...")
+                time.sleep(batch_delay)
         
         # Log final summary
         success_rate = (results["success"] / results["total"]) * 100 if results["total"] > 0 else 0
@@ -184,8 +193,7 @@ def main():
     parser.add_argument("--batch-size", type=int, default=5, help="Number of tokens to process in each batch")
     parser.add_argument("--limit", type=int, help="Maximum number of tokens to process (None for all)")
     parser.add_argument("--verbose", action="store_true", help="Print sample data")
-    parser.add_argument("--interval", type=str, default="ONE_DAY", 
-                       help="Data interval (ONE_MINUTE, FIVE_MINUTE, FIFTEEN_MINUTE, THIRTY_MINUTE, ONE_HOUR, ONE_DAY)")
+    parser.add_argument("--interval", type=str, help="Data interval (ONE_MINUTE, FIVE_MINUTE, FIFTEEN_MINUTE, THIRTY_MINUTE, ONE_HOUR, ONE_DAY)")
     
     args = parser.parse_args()
     

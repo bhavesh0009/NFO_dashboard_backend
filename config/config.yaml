@@ -38,4 +38,19 @@ exchange_segments:
 # Date Formats
 date_formats:
   expiry: "%d%b%Y"
-  db_date: "%Y-%m-%d" 
+  db_date: "%Y-%m-%d"
+
+# Equity Market Data Configuration
+equity_market_data:
+  start_date: "2000-01-01 09:15"  # Historical data start date
+  rate_limiting:
+    request_delay: 0.25  # Seconds between API requests
+    batch_delay: 1  # Seconds between batches
+  default_interval: "ONE_DAY"  # Default interval for historical data
+  intervals:
+    minute: "ONE_MINUTE"
+    five_minutes: "FIVE_MINUTE"
+    fifteen_minutes: "FIFTEEN_MINUTE"
+    thirty_minutes: "THIRTY_MINUTE"
+    hour: "ONE_HOUR"
+    day: "ONE_DAY" 

@@ -63,14 +63,13 @@ class EquityMarketDataManager:
         Returns:
             tuple: (fromdate, todate) formatted strings
         """
-        # From Angel One API example, format is: "YYYY-MM-DD HH:MM"
-        
-        # From date is set to January 1, 2000 as requested
-        from_date = "2000-01-01 09:15"
+        # Get the start date from configuration
+        from_date = config.get('equity_market_data', 'start_date')
         
         # To date is yesterday at market close
         yesterday = datetime.now() - timedelta(days=1)
-        to_date = yesterday.strftime("%Y-%m-%d") + " 15:30"
+        market_end = config.get('market', 'trading_hours', 'end')
+        to_date = yesterday.strftime("%Y-%m-%d") + f" {market_end}"
         
         logger.info(f"Date range for equity market data: {from_date} to {to_date}")
         return from_date, to_date
@@ -113,17 +112,21 @@ class EquityMarketDataManager:
             logger.error(f"❌ Error fetching equity market data for {name}: {str(e)}")
             return None
     
-    def process_equity_market_data(self, limit: int = 5, interval: str = "ONE_DAY") -> Dict[str, Any]:
+    def process_equity_market_data(self, limit: int = 5, interval: str = None) -> Dict[str, Any]:
         """
         Process market data for equity tokens.
         
         Args:
             limit: Maximum number of tokens to process (default: 5 for testing)
-            interval: Data interval (ONE_MINUTE, ONE_DAY, etc.) Default: ONE_DAY
+            interval: Data interval (ONE_MINUTE, ONE_DAY, etc.) If None, uses config default
             
         Returns:
             Dict[str, Any]: Results summary with success and error counts
         """
+        # Use default interval from config if none provided
+        if interval is None:
+            interval = config.get('equity_market_data', 'default_interval')
+        
         equity_tokens = self.get_equity_tokens(limit)
         
         if equity_tokens.empty:
@@ -156,22 +159,27 @@ class EquityMarketDataManager:
                 results["errors"] += 1
             
             # Add a small delay to avoid API rate limits
-            time.sleep(0.25)
+            request_delay = config.get('equity_market_data', 'rate_limiting', 'request_delay')
+            time.sleep(request_delay)
         
         logger.info(f"✅ Equity market data processing complete. Success: {results['success']}, Errors: {results['errors']}")
         return results
         
-    def fetch_and_store_equity_market_data(self, limit: int = 5, interval: str = "ONE_DAY") -> Dict[str, Any]:
+    def fetch_and_store_equity_market_data(self, limit: int = 5, interval: str = None) -> Dict[str, Any]:
         """
         Fetch and store market data for equity tokens.
         
         Args:
             limit: Maximum number of tokens to process (default: 5 for testing)
-            interval: Data interval (ONE_MINUTE, ONE_DAY, etc.) Default: ONE_DAY
+            interval: Data interval (ONE_MINUTE, ONE_DAY, etc.) If None, uses config default
             
         Returns:
             Dict[str, Any]: Results summary with success and error counts
         """
+        # Use default interval from config if none provided
+        if interval is None:
+            interval = config.get('equity_market_data', 'default_interval')
+        
         equity_tokens = self.get_equity_tokens(limit)
         
         if equity_tokens.empty:
@@ -210,7 +218,8 @@ class EquityMarketDataManager:
                 results["errors"] += 1
             
             # Add a small delay to avoid API rate limits
-            time.sleep(0.25)
+            request_delay = config.get('equity_market_data', 'rate_limiting', 'request_delay')
+            time.sleep(request_delay)
         
         logger.info(f"✅ Equity market data fetch and store complete. Success: {results['success']}, Errors: {results['errors']}")
         return results

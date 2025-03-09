@@ -60,7 +60,7 @@ def test_token_processing():
         if db_manager:
             db_manager.close()
 
-def test_equity_market_data(limit=5, store=False, verbose=False, interval="ONE_DAY"):
+def test_equity_market_data(limit=5, store=False, verbose=False, interval=None):
     """
     Test fetching market data for equity tokens.
     
@@ -68,7 +68,7 @@ def test_equity_market_data(limit=5, store=False, verbose=False, interval="ONE_D
         limit: Maximum number of tokens to process
         store: Whether to store data in the database
         verbose: Whether to print sample data
-        interval: Data interval (ONE_MINUTE, ONE_DAY, etc.) Default: ONE_DAY
+        interval: Data interval (ONE_MINUTE, ONE_DAY, etc.) If None, uses config default
         
     Returns:
         bool: True if successful, False otherwise
@@ -117,7 +117,7 @@ def test_equity_market_data(limit=5, store=False, verbose=False, interval="ONE_D
         logger.error(f"❌ Error testing equity market data: {str(e)}")
         return False
 
-def batch_equity_market_data(batch_size=5, limit=None, verbose=False, interval="ONE_DAY"):
+def batch_equity_market_data(batch_size=5, limit=None, verbose=False, interval=None):
     """
     Fetch and store equity market data in batches.
     
@@ -125,7 +125,7 @@ def batch_equity_market_data(batch_size=5, limit=None, verbose=False, interval="
         batch_size: Number of tokens to process in each batch
         limit: Maximum number of tokens to process (None for all)
         verbose: Whether to print sample data
-        interval: Data interval (ONE_MINUTE, ONE_DAY, etc.) Default: ONE_DAY
+        interval: Data interval (ONE_MINUTE, ONE_DAY, etc.) If None, uses config default
         
     Returns:
         bool: True if at least one token was processed successfully
