@@ -10,11 +10,10 @@ from datetime import datetime
 from typing import Optional, Dict, List, Any, Tuple
 from logzero import logger
 from src.db_manager import DBManager
+from src.config_manager import config
 
 class TokenManager:
     """Manages token data from Angel One API."""
-    
-    ANGEL_API_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
     
     def __init__(self, db_manager: Optional[DBManager] = None):
         """Initialize TokenManager."""
@@ -30,7 +29,8 @@ class TokenManager:
         """
         try:
             logger.info("Fetching token master data from Angel One API...")
-            response = requests.get(self.ANGEL_API_URL)
+            url = config.get('api', 'angel_one', 'token_master_url')
+            response = requests.get(url)
             response.raise_for_status()
             
             # Convert to DataFrame immediately
@@ -61,10 +61,16 @@ class TokenManager:
             return None
             
         try:
+            # Get configuration values
+            futures_type = config.get('instrument_types', 'futures_stock')
+            nfo_segment = config.get('exchange_segments', 'nfo')
+            expiry_format = config.get('date_formats', 'expiry')
+            db_date_format = config.get('date_formats', 'db_date')
+            
             # Filter futures stocks
             futures_df = self.tokens_df[
-                (self.tokens_df['instrumenttype'] == 'FUTSTK') & 
-                (self.tokens_df['exch_seg'] == 'NFO')
+                (self.tokens_df['instrumenttype'] == futures_type) & 
+                (self.tokens_df['exch_seg'] == nfo_segment)
             ].copy()
             
             if futures_df.empty:
@@ -80,7 +86,7 @@ class TokenManager:
             # Convert expiry strings to dates
             futures_df['expiry_date'] = pd.to_datetime(
                 futures_df['expiry'], 
-                format='%d%b%Y'
+                format=expiry_format
             ).dt.date
             
             # Find minimum expiry and filter
@@ -91,11 +97,11 @@ class TokenManager:
             
             # Convert expiry to standard format
             current_expiry_futures['expiry'] = current_expiry_futures['expiry_date'].apply(
-                lambda x: x.strftime('%Y-%m-%d')
+                lambda x: x.strftime(db_date_format)
             )
             
             # Add token type and futures token reference
-            current_expiry_futures['token_type'] = 'FUTURES'
+            current_expiry_futures['token_type'] = config.get('token_types', 'futures')
             current_expiry_futures['futures_token'] = None
             
             # Ensure numeric columns are properly typed
@@ -128,13 +134,16 @@ class TokenManager:
             return None
             
         try:
+            # Get configuration values
+            nse_segment = config.get('exchange_segments', 'nse')
+            
             # Create equity symbols from futures names
             futures_names = set(futures_df['name'])
             equity_symbols = {f"{name}-EQ" for name in futures_names}
             
             # Filter equity tokens
             equity_df = self.tokens_df[
-                (self.tokens_df['exch_seg'] == 'NSE') & 
+                (self.tokens_df['exch_seg'] == nse_segment) & 
                 (self.tokens_df['symbol'].isin(equity_symbols))
             ].copy()
             
@@ -143,7 +152,7 @@ class TokenManager:
                 return None
             
             # Add token type
-            equity_df['token_type'] = 'EQUITY'
+            equity_df['token_type'] = config.get('token_types', 'equity')
             
             # Map futures tokens
             equity_df['base_name'] = equity_df['symbol'].str.replace('-EQ', '')

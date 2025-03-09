@@ -1,0 +1,39 @@
+# API Configuration
+api:
+  angel_one:
+    token_master_url: "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
+
+# Market Configuration
+market:
+  trading_hours:
+    start: "09:15"  # IST
+    end: "15:30"    # IST
+  pre_market:
+    start: "09:00"
+    end: "09:15"
+  post_market:
+    start: "15:30"
+    end: "15:45"
+
+# Database Configuration
+database:
+  default_path: "market_data.duckdb"
+
+# Token Types
+token_types:
+  futures: "FUTURES"
+  equity: "EQUITY"
+
+# Instrument Types
+instrument_types:
+  futures_stock: "FUTSTK"
+
+# Exchange Segments
+exchange_segments:
+  nfo: "NFO"
+  nse: "NSE"
+
+# Date Formats
+date_formats:
+  expiry: "%d%b%Y"
+  db_date: "%Y-%m-%d" 

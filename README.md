@@ -51,20 +51,61 @@ This project extracts data from Angel One API and stores it in DuckDB for analys
 3. Install required packages:
 
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements.txt --upgrade
    ```
 
 4. Configure your Angel One API credentials (see Configuration section)
 
 ## Configuration
 
-Create a `.env` file in the project root with the following variables:
+The project uses a YAML-based configuration system for managing all settings:
+
+### Environment Variables
+
+Create a `.env` file in the project root with your API credentials:
 
 ```
 ANGEL_ONE_CLIENT_ID=your_client_id
 ANGEL_ONE_PASSWORD=your_password
 ANGEL_ONE_API_KEY=your_api_key
 ANGEL_ONE_PIN=your_pin
+```
+
+### Application Configuration
+
+All other settings are managed in `config/config.yaml`:
+
+```yaml
+# API Configuration
+api:
+  angel_one:
+    token_master_url: "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
+
+# Market Configuration
+market:
+  trading_hours:
+    start: "09:15"  # IST
+    end: "15:30"    # IST
+  pre_market:
+    start: "09:00"
+    end: "09:15"
+  post_market:
+    start: "15:30"
+    end: "15:45"
+
+# Additional configurations for database, token types, etc.
+```
+
+Access configuration values in code:
+
+```python
+from src.config_manager import config
+
+# Get API URL
+api_url = config.get('api', 'angel_one', 'token_master_url')
+
+# Get market hours
+market_start = config.get('market', 'trading_hours', 'start')
 ```
 
 ## Usage
@@ -126,15 +167,19 @@ CREATE TABLE token_master (
 ## Project Structure
 
 ```
+├── config/
+│   └── config.yaml          - Application configuration
 ├── src/
 │   ├── angel_one_connector.py - Connection to Angel One API
-│   ├── db_manager.py - DuckDB operations handler
+│   ├── config_manager.py    - Configuration management
+│   ├── db_manager.py        - DuckDB operations handler
+│   ├── token_manager.py     - Token processing logic
 │   └── ...
-├── main.py - Application entry point and testing script
-├── .env - Environment variables (not tracked in git)
-├── README.md - Project documentation
-├── DEVELOPMENT_LOG.md - Development progress tracking
-└── requirements.txt - Project dependencies
+├── main.py                  - Application entry point
+├── .env                     - Environment variables (not tracked)
+├── README.md               - Project documentation
+├── DEVELOPMENT_LOG.md      - Development progress tracking
+└── requirements.txt        - Project dependencies
 ```
 
 ## License

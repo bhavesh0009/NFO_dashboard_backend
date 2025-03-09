@@ -7,14 +7,20 @@ import duckdb
 import pandas as pd
 from logzero import logger
 from typing import Optional, List, Dict, Any
+from src.config_manager import config
 
 class DBManager:
     """Manages DuckDB database operations."""
     
-    def __init__(self, db_path: str = "market_data.duckdb"):
-        """Initialize database connection."""
-        self.db_path = db_path
-        self.conn = duckdb.connect(db_path)
+    def __init__(self, db_path: Optional[str] = None):
+        """
+        Initialize database connection.
+        
+        Args:
+            db_path: Optional database path, uses config value if not provided
+        """
+        self.db_path = db_path or config.get('database', 'default_path')
+        self.conn = duckdb.connect(self.db_path)
         self._init_tables()
     
     def _init_tables(self):
@@ -91,7 +97,7 @@ class DBManager:
             logger.info(f"✅ Stored {count} tokens in master table")
             
             # Show sample data by token type
-            for token_type in ['FUTURES', 'EQUITY']:
+            for token_type in [config.get('token_types', 'futures'), config.get('token_types', 'equity')]:
                 sample = self.conn.execute(f"""
                     SELECT token, symbol, name, token_type, futures_token, expiry
                     FROM token_master 
