@@ -19,6 +19,7 @@ This document tracks the development progress of the Angel One Data Pipeline pro
 
 - [x] Implement token values (master stock records) extraction
 - [x] Create data validation schemas
+- [x] Optimize token storage with unified schema
 - [ ] Fetch and organize market data
 - [ ] Add data transformation utilities
 
@@ -26,6 +27,7 @@ This document tracks the development progress of the Angel One Data Pipeline pro
 
 - [x] Setup DuckDB connection and schema
 - [x] Create data storage routines
+- [x] Implement unified token storage
 - [ ] Implement incremental data updates
 - [ ] Add data versioning capabilities
 
@@ -125,6 +127,24 @@ This document tracks the development progress of the Angel One Data Pipeline pro
   - ✅ Create lookup capabilities
   - ✅ Implement regular updates
 - **Notes**: Successfully implemented and tested with proper data validation
+
+### 2025-03-09: Database Schema Optimization
+
+- Implemented unified token storage approach:
+  - Consolidated multiple token tables into a single master table
+  - Added token type differentiation ('FUTURES' or 'EQUITY')
+  - Improved referential integrity between futures and equity tokens
+  - Enhanced data validation and type handling
+- Key improvements:
+  - Streamlined database schema for better performance
+  - Added proper column type handling for numeric values
+  - Implemented explicit column mapping for reliable data insertion
+  - Enhanced error logging and debugging capabilities
+- Successfully tested:
+  - Processed over 120,000 raw tokens
+  - Filtered and stored 216 current expiry futures
+  - Mapped and stored 216 corresponding equity tokens
+  - Verified data integrity and relationships
 
 ## Challenges & Solutions
 

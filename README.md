@@ -1,6 +1,6 @@
 # Angel One Data Pipeline
 
-_Last Updated: March 8, 2025_
+_Last Updated: March 9, 2025_
 
 ## Overview
 
@@ -15,7 +15,9 @@ This project extracts data from Angel One API and stores it in DuckDB for analys
   - Equity spot token mapping
   - Automatic expiry date handling
 - ✅ Efficient storage in DuckDB database
-  - Structured schema for futures and equity tokens
+  - Unified schema for all token types
+  - Smart token type differentiation
+  - Automated data validation
   - Referential integrity between instruments
 - Automated data refresh and synchronization
 
@@ -85,17 +87,41 @@ if token_manager.fetch_tokens():
 
 ## Data Processing
 
-The pipeline handles two main types of financial instruments:
+The pipeline handles two main types of financial instruments in a unified storage system:
 
 1. **Futures Tokens**
    - Filters FUTSTK instruments from NFO segment
    - Automatically identifies current expiry contracts
    - Processes expiry dates into standardized format
+   - Handles numeric data validation
 
 2. **Equity Tokens**
    - Maps futures to corresponding equity spot tokens
    - Maintains referential integrity with futures
    - Stores in normalized database structure
+   - Automatic type conversion and validation
+
+## Database Schema
+
+The system uses a unified token master table with the following structure:
+
+```sql
+CREATE TABLE token_master (
+    token VARCHAR,
+    symbol VARCHAR,
+    name VARCHAR,
+    expiry DATE,
+    strike DECIMAL(18,6),
+    lotsize INTEGER,
+    instrumenttype VARCHAR,
+    exch_seg VARCHAR,
+    tick_size DECIMAL(18,6),
+    token_type VARCHAR,  -- 'FUTURES' or 'EQUITY'
+    futures_token VARCHAR,  -- Reference to futures token for equity
+    created_at TIMESTAMP,
+    PRIMARY KEY (token)
+)
+```
 
 ## Project Structure
 

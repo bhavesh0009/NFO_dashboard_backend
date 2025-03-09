@@ -36,16 +36,16 @@ def test_token_processing():
         db_manager = DBManager()
         token_manager = TokenManager(db_manager)
         
-        # Fetch tokens
+        # Fetch all tokens
         logger.info("Fetching token master data...")
         if not token_manager.fetch_tokens():
             logger.error("❌ Failed to fetch token data")
             return
         
-        # Process and store tokens
-        logger.info("Processing and storing tokens...")
+        # Process and store required tokens
+        logger.info("Processing and storing required tokens...")
         if token_manager.process_and_store_tokens():
-            logger.info("✅ Successfully processed and stored tokens")
+            logger.info("✅ Successfully processed and stored required tokens")
         else:
             logger.error("❌ Failed to process and store tokens")
             

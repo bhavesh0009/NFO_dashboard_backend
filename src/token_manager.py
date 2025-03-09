@@ -5,8 +5,9 @@ Handles fetching and processing of token master data.
 
 import json
 import requests
+import pandas as pd
 from datetime import datetime
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Tuple
 from logzero import logger
 from src.db_manager import DBManager
 
@@ -17,7 +18,7 @@ class TokenManager:
     
     def __init__(self, db_manager: Optional[DBManager] = None):
         """Initialize TokenManager."""
-        self.tokens_data: Optional[List[Dict[str, Any]]] = None
+        self.tokens_df: Optional[pd.DataFrame] = None
         self.db_manager = db_manager or DBManager()
     
     def fetch_tokens(self) -> bool:
@@ -32,13 +33,9 @@ class TokenManager:
             response = requests.get(self.ANGEL_API_URL)
             response.raise_for_status()
             
-            self.tokens_data = response.json()
-            logger.info(f"✅ Successfully fetched {len(self.tokens_data)} tokens")
-            
-            # Log first few records to understand the structure
-            logger.info("Sample token data structure:")
-            for idx, token in enumerate(self.tokens_data[:3]):
-                logger.info(f"Token {idx + 1}: {json.dumps(token, indent=2)}")
+            # Convert to DataFrame immediately
+            self.tokens_df = pd.DataFrame(response.json())
+            logger.info(f"✅ Successfully fetched {len(self.tokens_df)} tokens")
             
             return True
             
@@ -52,75 +49,62 @@ class TokenManager:
             logger.error(f"❌ Unexpected error while fetching tokens: {str(e)}")
             return False
     
-    def get_current_expiry_futures(self) -> Optional[List[Dict[str, Any]]]:
+    def process_futures_tokens(self) -> Optional[pd.DataFrame]:
         """
-        Get F&O stocks with nearest expiry date.
+        Process F&O stocks with nearest expiry date.
         
         Returns:
-            Optional[List[Dict[str, Any]]]: Filtered futures tokens
+            Optional[pd.DataFrame]: Filtered futures tokens
         """
-        if not self.tokens_data:
+        if self.tokens_df is None:
             logger.error("❌ No token data available. Call fetch_tokens() first.")
             return None
             
         try:
             # Filter futures stocks
-            futures_tokens = [
-                token for token in self.tokens_data
-                if token.get('instrumenttype') == 'FUTSTK' and token.get('exch_seg') == 'NFO'
-            ]
+            futures_df = self.tokens_df[
+                (self.tokens_df['instrumenttype'] == 'FUTSTK') & 
+                (self.tokens_df['exch_seg'] == 'NFO')
+            ].copy()
             
-            if not futures_tokens:
+            if futures_df.empty:
                 logger.error("❌ No futures tokens found")
                 return None
             
             # Check all distinct expiry formats
-            distinct_expiry_formats = set()
-            for token in futures_tokens:
-                if expiry := token.get('expiry'):
-                    distinct_expiry_formats.add(expiry)
-            
-            logger.info("All distinct expiry formats found:")
+            distinct_expiry_formats = futures_df['expiry'].unique()
+            logger.info("\nAll distinct expiry formats found:")
             for expiry in sorted(distinct_expiry_formats):
                 logger.info(f"Expiry format: {expiry}")
             
-            # Log sample of futures tokens before processing
-            logger.info("\nSample futures tokens before processing:")
-            for token in futures_tokens[:3]:
-                logger.info(f"Symbol: {token.get('symbol')}, Expiry: {token.get('expiry')}")
+            # Convert expiry strings to dates
+            futures_df['expiry_date'] = pd.to_datetime(
+                futures_df['expiry'], 
+                format='%d%b%Y'
+            ).dt.date
             
-            # Convert expiry strings to dates and find minimum expiry
-            for token in futures_tokens:
-                if token.get('expiry'):
-                    try:
-                        expiry_date = datetime.strptime(token['expiry'], '%d%b%Y').date()
-                        token['expiry_date'] = expiry_date
-                        # Keep the original expiry string for database
-                        token['expiry'] = expiry_date.strftime('%Y-%m-%d')
-                    except ValueError as e:
-                        logger.error(f"❌ Error parsing expiry date for {token.get('symbol')}: {str(e)}")
-                        logger.error(f"  Original expiry value: '{token.get('expiry')}'")
-                        token['expiry_date'] = None
-                else:
-                    token['expiry_date'] = None
+            # Find minimum expiry and filter
+            min_expiry = futures_df['expiry_date'].min()
+            current_expiry_futures = futures_df[
+                futures_df['expiry_date'] == min_expiry
+            ].copy()
             
-            valid_tokens = [token for token in futures_tokens if token.get('expiry_date')]
-            if not valid_tokens:
-                logger.error("❌ No valid expiry dates found")
-                return None
-                
-            min_expiry = min(token['expiry_date'] for token in valid_tokens)
+            # Convert expiry to standard format
+            current_expiry_futures['expiry'] = current_expiry_futures['expiry_date'].apply(
+                lambda x: x.strftime('%Y-%m-%d')
+            )
             
-            # Filter tokens with minimum expiry date
-            current_expiry_futures = [
-                token for token in valid_tokens
-                if token.get('expiry_date') == min_expiry
-            ]
+            # Add token type and futures token reference
+            current_expiry_futures['token_type'] = 'FUTURES'
+            current_expiry_futures['futures_token'] = None
             
-            # Log sample of processed futures tokens
-            logger.info("\nSample processed futures tokens:")
-            for token in current_expiry_futures[:3]:
-                logger.info(f"Symbol: {token.get('symbol')}, Original Expiry: {token.get('expiry')}, Parsed Date: {token.get('expiry_date')}")
+            # Ensure numeric columns are properly typed
+            current_expiry_futures['strike'] = pd.to_numeric(current_expiry_futures['strike'], errors='coerce')
+            current_expiry_futures['lotsize'] = pd.to_numeric(current_expiry_futures['lotsize'], errors='coerce')
+            current_expiry_futures['tick_size'] = pd.to_numeric(current_expiry_futures['tick_size'], errors='coerce')
+            
+            # Drop temporary column
+            current_expiry_futures.drop('expiry_date', axis=1, inplace=True)
             
             logger.info(f"✅ Found {len(current_expiry_futures)} current expiry futures")
             return current_expiry_futures
@@ -129,63 +113,59 @@ class TokenManager:
             logger.error(f"❌ Error processing futures tokens: {str(e)}")
             return None
     
-    def get_equity_tokens_for_futures(self, futures_tokens: List[Dict[str, Any]]) -> Optional[List[Dict[str, Any]]]:
+    def process_equity_tokens(self, futures_df: pd.DataFrame) -> Optional[pd.DataFrame]:
         """
         Get corresponding equity spot tokens for futures.
         
         Args:
-            futures_tokens: List of futures tokens to find equity spots for
+            futures_df: DataFrame of futures tokens
             
         Returns:
-            Optional[List[Dict[str, Any]]]: Filtered equity tokens
+            Optional[pd.DataFrame]: Filtered equity tokens
         """
-        if not self.tokens_data:
+        if self.tokens_df is None:
             logger.error("❌ No token data available. Call fetch_tokens() first.")
             return None
             
         try:
-            # Extract names from futures tokens
-            futures_names = {token['name'] for token in futures_tokens}
-            logger.info(f"Base names from futures: {sorted(futures_names)[:5]}")
-            
-            # Create equity symbols by adding -EQ suffix
+            # Create equity symbols from futures names
+            futures_names = set(futures_df['name'])
             equity_symbols = {f"{name}-EQ" for name in futures_names}
-            logger.info(f"Equity symbols to search: {sorted(equity_symbols)[:5]}")
             
             # Filter equity tokens
-            equity_tokens = [
-                token for token in self.tokens_data
-                if token.get('exch_seg') == 'NSE' and token.get('symbol') in equity_symbols
-            ]
+            equity_df = self.tokens_df[
+                (self.tokens_df['exch_seg'] == 'NSE') & 
+                (self.tokens_df['symbol'].isin(equity_symbols))
+            ].copy()
             
-            # Log sample matches
-            logger.info("\nSample equity matches found:")
-            for token in equity_tokens[:3]:
-                logger.info(f"Symbol: {token.get('symbol')}, Name: {token.get('name')}, Exchange: {token.get('exch_seg')}")
+            if equity_df.empty:
+                logger.error("❌ No matching equity tokens found")
+                return None
             
-            # Add reference to futures token
-            for eq_token in equity_tokens:
-                base_name = eq_token['symbol'].replace('-EQ', '')
-                matching_futures = next(
-                    (ft['token'] for ft in futures_tokens if ft['name'] == base_name),
-                    None
-                )
-                eq_token['futures_token'] = matching_futures
-                
-                # Log the mapping
-                if matching_futures:
-                    logger.info(f"Mapped equity {eq_token['symbol']} to futures token {matching_futures} (base name: {base_name})")
+            # Add token type
+            equity_df['token_type'] = 'EQUITY'
             
-            logger.info(f"✅ Found {len(equity_tokens)} corresponding equity tokens")
-            return equity_tokens if equity_tokens else None
+            # Map futures tokens
+            equity_df['base_name'] = equity_df['symbol'].str.replace('-EQ', '')
+            futures_token_map = futures_df.set_index('name')['token'].to_dict()
+            equity_df['futures_token'] = equity_df['base_name'].map(futures_token_map)
+            
+            # Ensure numeric columns are properly typed
+            equity_df['strike'] = 0.0  # Equity tokens don't have strike price
+            equity_df['lotsize'] = pd.to_numeric(equity_df['lotsize'], errors='coerce')
+            equity_df['tick_size'] = pd.to_numeric(equity_df['tick_size'], errors='coerce')
+            
+            # Set expiry to NULL for equity tokens
+            equity_df['expiry'] = None
+            
+            # Drop temporary column
+            equity_df.drop('base_name', axis=1, inplace=True)
+            
+            logger.info(f"✅ Found {len(equity_df)} corresponding equity tokens")
+            return equity_df
             
         except Exception as e:
             logger.error(f"❌ Error processing equity tokens: {str(e)}")
-            # Log more details about the error
-            logger.error(f"Error details: {str(e)}")
-            if futures_tokens:
-                logger.error("Sample futures token for debugging:")
-                logger.error(json.dumps(futures_tokens[0], indent=2))
             return None
     
     def process_and_store_tokens(self) -> bool:
@@ -196,34 +176,22 @@ class TokenManager:
             bool: True if successful, False otherwise
         """
         try:
-            # Get current expiry futures
-            futures_tokens = self.get_current_expiry_futures()
-            if not futures_tokens:
+            # Process futures tokens
+            futures_df = self.process_futures_tokens()
+            if futures_df is None:
                 return False
             
-            # Store futures tokens
-            if not self.db_manager.store_futures_tokens(futures_tokens):
+            # Process equity tokens
+            equity_df = self.process_equity_tokens(futures_df)
+            if equity_df is None:
                 return False
             
-            # Get and store corresponding equity tokens
-            equity_tokens = self.get_equity_tokens_for_futures(futures_tokens)
-            if not equity_tokens:
-                return False
+            # Combine DataFrames
+            combined_df = pd.concat([futures_df, equity_df], ignore_index=True)
             
-            if not self.db_manager.store_equity_tokens(equity_tokens, futures_tokens):
-                return False
-            
-            return True
+            # Store in database
+            return self.db_manager.store_tokens(combined_df)
             
         except Exception as e:
             logger.error(f"❌ Error in token processing pipeline: {str(e)}")
-            return False
-    
-    def get_tokens(self) -> Optional[List[Dict[str, Any]]]:
-        """
-        Get the fetched token data.
-        
-        Returns:
-            Optional[List[Dict[str, Any]]]: List of token dictionaries if available, None otherwise
-        """
-        return self.tokens_data 
+            return False 
