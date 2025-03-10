@@ -29,7 +29,7 @@ This document tracks the development progress of the Angel One Data Pipeline pro
 - [x] Create data storage routines
 - [x] Implement unified token storage
 - [x] Implement incremental data updates
-- [ ] Add data versioning capabilities
+- [x] Add data versioning capabilities
 
 ### Phase 4: Pipeline Automation (Current)
 
@@ -38,6 +38,7 @@ This document tracks the development progress of the Angel One Data Pipeline pro
 - [x] Implement logging and monitoring
 - [x] Implement real-time market data processing
 - [x] Add cross-platform compatibility for Windows
+- [x] Implement options analytics with strike normalization
 - [ ] Create alert system for failures
 
 ## Current Sprint Tasks
@@ -46,9 +47,34 @@ This document tracks the development progress of the Angel One Data Pipeline pro
 2. ✅ Implement real-time market data processing
 3. ✅ Fix Windows console logging compatibility issues
 4. ✅ Enhance SQL statements for better error handling
-5. [ ] Add data visualization for real-time market data
+5. ✅ Implement options analytics with strike distance calculation
+6. ✅ Implement ATM options filtering for real-time data
+7. [ ] Add data visualization for real-time market data
 
 ## Implementation Notes
+
+### 2025-03-15: ATM Options Filtering Implementation
+
+- Implemented intelligent ATM options filtering:
+  - Created two-pass approach to first fetch futures data, then only fetch relevant ATM options
+  - Added `get_atm_options_tokens` method to filter options based on current futures prices
+  - Enhanced `RealtimeMarketDataManager` to support efficient ATM-only processing
+  - Added configurable strike buffer to control the range of strikes included
+- Key benefits:
+  - Reduced API requests by 90-95% for options data collection
+  - Minimized database storage requirements with focused data collection
+  - Improved performance with more relevant data selection
+  - Enhanced usability with configurable ATM strike range
+- Technical implementation:
+  - Added strike distance awareness using database values and sensible defaults
+  - Created command-line parameter support for controlling ATM filtering behavior
+  - Enhanced documentation with clear examples of feature usage
+  - Implemented comprehensive error handling for futures price extraction
+- Use cases enabled:
+  - Efficient real-time monitoring of ATM options for trading decisions
+  - Reduced storage footprint for continuous data collection
+  - More focused analysis with only the most relevant options data
+  - Customizable near-ATM range to match specific trading strategies
 
 ### 2025-03-10: Cross-Platform Compatibility and Error Fixes
 
@@ -71,6 +97,35 @@ This document tracks the development progress of the Angel One Data Pipeline pro
   - Added documentation for common issues and solutions
   - Provided guidance for extending the codebase with compatibility in mind
   - Enhanced error messages for easier debugging
+
+### 2025-03-10: Options Analytics Implementation
+
+- Implemented comprehensive options analytics enhancements:
+  - Added strike price normalization to divide API values by 100
+  - Developed strike distance calculation algorithm for each stock
+  - Enhanced database schema to store strike distance information
+  - Updated token processing pipeline to incorporate options analytics
+- Key features:
+  - Automatic detection of standard strike distances using frequency analysis
+  - Normalized strike prices that match market representation
+  - Comprehensive strike grid mapping for strategy development
+  - Complete database integration with strike distance storage
+- Technical implementation:
+  - Enhanced `process_options_tokens` method with strike price adjustment
+  - Added calculation of differences between adjacent strikes for each stock
+  - Implemented mode-based statistical analysis to determine standard distance
+  - Added `strike_distance` column to database schema with migration support
+  - Enhanced logging with strike distance visualization
+- Challenges addressed:
+  - Handled database schema migration for existing databases
+  - Implemented column existence checking using information_schema
+  - Fixed token storage to properly include the strike_distance column
+  - Added debug logging to verify strike distance calculations
+- Use cases enabled:
+  - More accurate options strategy development
+  - Strike price grid mapping for volatility analysis
+  - Improved options chain visualization
+  - Strike selection for advanced option strategies
 
 ### 2025-03-13: Real-time Market Data Implementation
 

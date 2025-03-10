@@ -228,8 +228,35 @@ class TokenManager:
             
             # Ensure numeric columns are properly typed
             current_expiry_options['strike'] = pd.to_numeric(current_expiry_options['strike'], errors='coerce')
+            # Divide strike by 100 as the API returns strike with two additional zeroes
+            current_expiry_options['strike'] = current_expiry_options['strike'] / 100
             current_expiry_options['lotsize'] = pd.to_numeric(current_expiry_options['lotsize'], errors='coerce')
             current_expiry_options['tick_size'] = pd.to_numeric(current_expiry_options['tick_size'], errors='coerce')
+            
+            # Calculate strike distance for each name
+            strike_distances = {}
+            for name, group in current_expiry_options.groupby('name'):
+                # Get unique strikes and sort them
+                unique_strikes = sorted(group['strike'].unique())
+                
+                if len(unique_strikes) > 1:
+                    # Calculate differences between adjacent strikes
+                    differences = [round(unique_strikes[i+1] - unique_strikes[i], 2) for i in range(len(unique_strikes)-1)]
+                    
+                    if differences:
+                        # Find the most common difference (mode)
+                        from collections import Counter
+                        counter = Counter(differences)
+                        strike_distance = counter.most_common(1)[0][0]
+                        strike_distances[name] = strike_distance
+            
+            # Add strike_distance to dataframe
+            current_expiry_options['strike_distance'] = current_expiry_options['name'].map(strike_distances)
+            
+            # Log strike distances
+            logger.info("\nCalculated strike distances:")
+            strike_distance_df = pd.DataFrame(list(strike_distances.items()), columns=['name', 'strike_distance'])
+            logger.info(strike_distance_df.head())
             
             # Drop temporary column
             current_expiry_options.drop('expiry_date', axis=1, inplace=True)

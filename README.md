@@ -15,6 +15,7 @@ This project extracts data from Angel One API and stores it in DuckDB for analys
 - ✅ **Process Automation**: Batched processing with rate limiting
 - ✅ **Real-time Market Data**: Live market data for spot, futures, and options
 - ✅ **Windows Compatibility**: ASCII-compatible logging for Windows terminals
+- ✅ **Options Analytics**: Strike price normalization and strike distance calculation
 
 ## Prerequisites
 
@@ -141,6 +142,18 @@ python main.py realtime --options
 # Fetch real-time market data with limits
 python main.py realtime --equity-limit 10 --futures-limit 10
 
+# Fetch real-time market data with ATM options only (default behavior with options)
+python main.py realtime --options
+
+# Fetch real-time market data with options and specify 2 strikes above and below ATM
+python main.py realtime --options --strike-buffer 2
+
+# Fetch real-time market data with exact ATM options only (1 call and 1 put per future)
+python main.py realtime --options --exact-atm
+
+# Fetch all options (not just ATM)
+python main.py realtime --options --all-options
+
 # Run continuous real-time market monitor
 python scripts/realtime_market_monitor.py
 
@@ -150,8 +163,39 @@ python scripts/realtime_market_monitor.py --refresh 30
 # Run continuous monitor for equity only
 python scripts/realtime_market_monitor.py --no-futures
 
+# Run continuous monitor with ATM options only
+python scripts/realtime_market_monitor.py --options
+
+# Run continuous monitor with exact ATM options only (1 call and 1 put per future)
+python scripts/realtime_market_monitor.py --options --exact-atm
+
+# Run continuous monitor with all options (not just ATM)
+python scripts/realtime_market_monitor.py --options --all-options
+
+# Run continuous monitor with options and specify 3 strikes above and below ATM
+python scripts/realtime_market_monitor.py --options --strike-buffer 3
+
 # Run all basic tests
 python main.py
+
+# Complete Market Data Pipeline
+# Run the complete pipeline with default settings (starts at any time, waits for market open)
+python market_data_pipeline.py
+
+# Run pipeline with options for ATM options only
+python market_data_pipeline.py --options --exact-atm
+
+# Skip token refresh and historical data steps
+python market_data_pipeline.py --no-tokens --no-history
+
+# Skip waiting for market open (for testing)
+python market_data_pipeline.py --no-wait
+
+# Run with custom refresh interval (30 seconds)
+python market_data_pipeline.py --refresh 30
+
+# Run with limited number of tokens
+python market_data_pipeline.py --equity-limit 50 --futures-limit 50
 ```
 
 ## Data Processing
@@ -169,8 +213,45 @@ The system captures comprehensive real-time market data using Angel One's getMar
 - **Full Market Data**: Complete market data including LTP, OHLC, volumes, and order book depth
 - **Efficient Batching**: Respects API limits (50 tokens per request, 1 request per second)
 - **Multiple Instrument Types**: Support for equity, futures, and options
+- **Smart Options Filtering**: Automatically identifies and focuses on ATM options
 - **Continuous Monitoring**: Scheduled data collection with market hours awareness
 - **Windows Compatibility**: ASCII-compatible logging for error-free operation in Windows terminals
+
+### ATM Options Processing
+
+A key feature of the system is the ability to intelligently filter options to only include At-The-Money (ATM) and near-ATM strikes:
+
+1. **Two-Pass Processing**:
+   - First fetches futures data to determine current market prices
+   - Then selectively fetches only relevant ATM options based on those prices
+   - Significantly reduces API requests and database storage requirements
+
+2. **Configurable Strike Buffer**:
+   - Default includes 1 strike above and below ATM for each underlying
+   - Customizable via `--strike-buffer` parameter (e.g., `--strike-buffer 2` for 2 strikes)
+   - Enables precise control over the range of strikes to monitor
+
+3. **Exact ATM Mode**:
+   - Optional `--exact-atm` flag selects only the single closest strike to the ATM price for each underlying
+   - Results in exactly 2 options per future (1 call and 1 put at the exact ATM strike)
+   - Produces minimal dataset for focused ATM-only analysis
+
+4. **Strike Distance Awareness**:
+   - Automatically determines appropriate strike distances for each stock
+   - Uses stored `strike_distance` values from token database
+   - Falls back to sensible defaults when data unavailable (e.g., 50 for NIFTY, 100 for BANKNIFTY)
+
+5. **Performance Benefits**:
+   - Reduces options tokens processed by 90-95% compared to full options chain
+   - Minimizes API rate limit consumption and database storage requirements
+   - Maintains focus on the most relevant options for trading
+
+This focused approach to options data collection provides several advantages:
+
+- More efficient API usage
+- Reduced database storage requirements
+- Faster processing times
+- Emphasis on the most relevant trading instruments
 
 ## Database Schema
 
@@ -190,6 +271,7 @@ CREATE TABLE token_master (
     tick_size DECIMAL(18,6),
     token_type VARCHAR,  -- 'FUTURES', 'OPTIONS', or 'EQUITY'
     futures_token VARCHAR,
+    strike_distance DECIMAL(18,6),  -- Distance between adjacent strikes for options
     created_at TIMESTAMP,
     PRIMARY KEY (token)
 )
@@ -237,6 +319,31 @@ CREATE TABLE realtime_market_data (
     PRIMARY KEY (symbol_token, timestamp)
 )
 ```
+
+## Options Analytics
+
+The system includes advanced options analytics capabilities:
+
+1. **Strike Price Normalization**:
+   - Automatically adjusts strike prices by dividing by 100 to match market representation
+   - Converts raw API values to actual market strikes (e.g., 800000 → 8000)
+   - Ensures accurate and readable strike values for analysis
+
+2. **Strike Distance Calculation**:
+   - Automatically calculates standard strike distance for each stock
+   - Uses mode calculation of differences between adjacent sorted strikes
+   - Provides precise strike increments for option chain analysis
+   - Enables accurate strike grid mapping for strategy development
+
+Example strike distances for popular stocks:
+
+- NIFTY: 50 points
+- BANKNIFTY: 100 points
+- AARTIIND: 5 points
+- HDFC: 20 points
+- RELIANCE: 10 points
+
+These features enable more accurate options analytics and strategy development by providing normalized data that matches market conventions.
 
 ## Troubleshooting
 
@@ -302,3 +409,73 @@ If you encounter rate limit errors from the Angel One API:
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Market Data Pipeline
+
+The system includes a comprehensive orchestration script (`market_data_pipeline.py`) that automates the entire data workflow:
+
+1. **Token Refresh**: Automatically refreshes token master data if needed
+2. **Historical Data Refresh**: Updates historical price data for equity tokens
+3. **Market Hours Awareness**: Waits for market open if started before trading hours
+4. **Real-time Monitoring**: Runs continuous real-time market data collection at specified intervals
+
+### Pipeline Workflow
+
+The pipeline follows a sequential workflow:
+
+```
+Start → Token Refresh → Historical Data → Wait for Market Open → Real-time Monitoring
+```
+
+Each step handles error conditions gracefully and continues to the next step even if a previous step had errors.
+
+### Command-Line Options
+
+The pipeline accepts various command-line options to customize its behavior:
+
+- **Data Selection**:
+  - `--no-tokens`: Skip token refresh step
+  - `--no-history`: Skip historical data refresh step
+  - `--history-limit N`: Limit historical data to N equity tokens
+  - `--no-equity`: Exclude equity from real-time monitoring
+  - `--no-futures`: Exclude futures from real-time monitoring
+  - `--options`: Include options in real-time monitoring
+
+- **Options Configuration**:
+  - `--all-options`: Include all options (not just ATM)
+  - `--strike-buffer N`: Number of strikes above and below ATM to include
+  - `--exact-atm`: Select only the exact ATM strike (1 call + 1 put per future)
+
+- **Timing and Limits**:
+  - `--refresh N`: Real-time refresh interval in seconds (default: 60)
+  - `--no-wait`: Don't wait for market open (start monitoring immediately)
+  - `--equity-limit N`: Limit equity tokens in real-time monitoring
+  - `--futures-limit N`: Limit futures tokens in real-time monitoring
+  - `--options-limit N`: Limit options tokens in real-time monitoring
+
+- **Output**:
+  - `--verbose`: Enable verbose output with detailed logging
+
+### Automated Scheduling
+
+For completely automated operation, you can set up the pipeline as a scheduled task:
+
+#### Windows (Task Scheduler)
+
+1. Open Task Scheduler
+2. Create a Basic Task
+3. Set the trigger to run daily at 8:55 AM
+4. Set the action to start a program
+5. Program/script: `python`
+6. Arguments: `market_data_pipeline.py --options --exact-atm`
+7. Start in: Your project directory
+
+#### Linux/MacOS (crontab)
+
+Add the following entry to your crontab:
+
+```
+55 8 * * 1-5 cd /path/to/project && /path/to/python market_data_pipeline.py --options --exact-atm
+```
+
+This runs the script at 8:55 AM on weekdays (Monday-Friday).

@@ -71,9 +71,10 @@ def setup_logging(log_dir):
     logger.info(f"Logging to {log_file}")
 
 def run_monitor(refresh_interval=60, include_equity=True, include_futures=True, include_options=False,
-               equity_limit=None, futures_limit=None, options_limit=None, log_dir="logs"):
+               equity_limit=None, futures_limit=None, options_limit=None, 
+               atm_only=True, strike_buffer=1, exact_atm_only=False, log_dir="logs"):
     """
-    Run the real-time market monitor.
+    Run continuous monitoring of real-time market data.
     
     Args:
         refresh_interval: Seconds between data refreshes
@@ -83,109 +84,156 @@ def run_monitor(refresh_interval=60, include_equity=True, include_futures=True, 
         equity_limit: Maximum number of equity tokens to process
         futures_limit: Maximum number of futures tokens to process
         options_limit: Maximum number of options tokens to process
-        log_dir: Directory for log files
+        atm_only: Whether to filter options to only ATM strikes
+        strike_buffer: Number of strikes above and below ATM to include
+        exact_atm_only: If True, only select the exact ATM strike per underlying
+        log_dir: Directory to store log files
     """
     # Setup logging
     setup_logging(log_dir)
     
-    # Register signal handler for graceful shutdown
+    # Create database manager
+    db_manager = DBManager()
+    
+    # Create real-time market data manager
+    realtime_manager = RealtimeMarketDataManager(db_manager=db_manager)
+    
+    # Initialize the global running flag
+    global running
+    running = True
+    
+    # Setup signal handler
     signal.signal(signal.SIGINT, signal_handler)
     
-    # Initialize managers
-    logger.info("Initializing database and market data managers...")
-    db_manager = DBManager()
-    manager = RealtimeMarketDataManager(db_manager=db_manager)
-    
-    # Log configuration
-    logger.info("=== Real-time Market Monitor Configuration ===")
-    logger.info(f"Refresh interval: {refresh_interval} seconds")
-    logger.info(f"Equity: {'[Y]' if include_equity else '[N]'} (limit: {equity_limit or 'All'})")
-    logger.info(f"Futures: {'[Y]' if include_futures else '[N]'} (limit: {futures_limit or 'All'})")
-    logger.info(f"Options: {'[Y]' if include_options else '[N]'} (limit: {options_limit or 'All'})")
+    # Log monitor parameters
+    logger.info("=" * 60)
+    logger.info(f"Starting real-time market monitor with parameters:")
+    logger.info(f"- Refresh interval: {refresh_interval} seconds")
+    logger.info(f"- Include equity: {include_equity}")
+    logger.info(f"- Include futures: {include_futures}")
+    logger.info(f"- Include options: {include_options}")
+    if equity_limit:
+        logger.info(f"- Equity limit: {equity_limit}")
+    if futures_limit:
+        logger.info(f"- Futures limit: {futures_limit}")
+    if options_limit:
+        logger.info(f"- Options limit: {options_limit}")
+    if include_options:
+        logger.info(f"- ATM only: {atm_only}")
+        logger.info(f"- Strike buffer: {strike_buffer}")
+        logger.info(f"- Exact ATM only: {exact_atm_only}")
+    logger.info("=" * 60)
     
     # Main monitoring loop
-    cycle_count = 0
-    total_fetched = 0
-    total_errors = 0
-    
-    logger.info("Starting real-time market monitor...")
+    iterations = 0
     
     try:
+        # Use the running flag instead of True for the while loop condition
         while running:
-            cycle_start = datetime.now()
-            cycle_count += 1
+            iterations += 1
             
-            # Check if within market hours
-            if not is_market_hours():
-                logger.info("Outside market hours, waiting for next check...")
-                time.sleep(refresh_interval)
-                continue
+            # Check if we should exit
+            if not running:
+                logger.info("Stopping monitor due to interrupt signal...")
+                break
+                
+            # Check if market is open
+            market_open = is_market_hours()
             
-            logger.info(f"=== Starting data refresh cycle {cycle_count} at {cycle_start.strftime('%H:%M:%S')} ===")
+            if market_open:
+                logger.info(f"Iteration {iterations}: Market is open, fetching data...")
+                
+                # Fetch and store real-time data
+                start_time = time.time()
+                results = realtime_manager.fetch_and_store_realtime_data(
+                    include_equity=include_equity,
+                    include_futures=include_futures,
+                    include_options=include_options,
+                    equity_limit=equity_limit,
+                    futures_limit=futures_limit,
+                    options_limit=options_limit,
+                    atm_only=atm_only,
+                    strike_buffer=strike_buffer,
+                    exact_atm_only=exact_atm_only
+                )
+                elapsed_time = time.time() - start_time
+                
+                # Print results
+                logger.info(f"Processed {results.get('total', 0)} tokens in {elapsed_time:.2f} seconds")
+                logger.info(f"Success: {results.get('success', 0)}")
+                logger.info(f"- Equity: {results.get('equity', 0)}")
+                logger.info(f"- Futures: {results.get('futures', 0)}")
+                logger.info(f"- Options: {results.get('options', 0)}")
+                logger.info(f"Failures: {results.get('failures', 0)}")
+                
+                if results.get('errors', []):
+                    logger.warning(f"Errors: {len(results.get('errors', []))}")
+            else:
+                logger.info(f"Iteration {iterations}: Market is closed, skipping data fetch.")
             
-            # Fetch and store real-time market data
-            results = manager.fetch_and_store_realtime_data(
-                include_equity=include_equity,
-                include_futures=include_futures,
-                include_options=include_options,
-                equity_limit=equity_limit,
-                futures_limit=futures_limit,
-                options_limit=options_limit
-            )
-            
-            # Update statistics
-            total_fetched += results['fetched_tokens']
-            total_errors += results['errors']
-            
-            # Log results
-            logger.info(f"Cycle {cycle_count} results: {results['fetched_tokens']} tokens fetched, {results['unfetched_tokens']} unfetched")
-            
-            # Calculate time to wait until next cycle
-            cycle_duration = (datetime.now() - cycle_start).total_seconds()
-            wait_time = max(0, refresh_interval - cycle_duration)
-            
-            if wait_time > 0 and running:
-                logger.info(f"Waiting {wait_time:.1f} seconds until next refresh cycle...")
-                time.sleep(wait_time)
-            
+            # Wait for next iteration, but check for interrupt every second
+            logger.info(f"Waiting {refresh_interval} seconds until next refresh...")
+            for _ in range(refresh_interval):
+                if not running:
+                    logger.info("Stopping monitor due to interrupt signal...")
+                    break
+                time.sleep(1)
+                
+    except KeyboardInterrupt:
+        # Set running to False if we catch a KeyboardInterrupt
+        running = False
+        logger.info("Monitor stopped by user.")
     except Exception as e:
-        logger.error(f"❌ Error in market monitor: {str(e)}")
+        logger.error(f"Monitor stopped due to an error: {str(e)}")
     finally:
-        # Clean up
-        logger.info("=== Real-time Market Monitor Summary ===")
-        logger.info(f"Total cycles: {cycle_count}")
-        logger.info(f"Total tokens fetched: {total_fetched}")
-        logger.info(f"Total errors: {total_errors}")
-        
-        db_manager.close()
-        logger.info("Real-time market monitor stopped")
+        # Close database connection
+        if db_manager:
+            db_manager.close()
+        logger.info("Real-time market monitor shutdown complete.")
 
 def main():
-    """Main function with argument parsing."""
-    # Setup console logging for Windows compatibility
-    setup_console_logging()
+    """Main entry point with argument parsing."""
+    parser = argparse.ArgumentParser(description="Continuous real-time market data monitor")
     
-    parser = argparse.ArgumentParser(description="Real-time Market Monitor")
+    parser.add_argument("--refresh", type=int, default=60,
+                        help="Refresh interval in seconds (default: 60)")
     
-    parser.add_argument('--refresh', type=int, default=60, 
-                        help='Refresh interval in seconds (default: 60)')
-    parser.add_argument('--no-equity', action='store_true', 
-                        help='Exclude equity tokens')
-    parser.add_argument('--no-futures', action='store_true', 
-                        help='Exclude futures tokens')
-    parser.add_argument('--options', action='store_true', 
-                        help='Include options tokens')
-    parser.add_argument('--equity-limit', type=int, 
-                        help='Maximum number of equity tokens to process')
-    parser.add_argument('--futures-limit', type=int, 
-                        help='Maximum number of futures tokens to process')
-    parser.add_argument('--options-limit', type=int, 
-                        help='Maximum number of options tokens to process')
-    parser.add_argument('--log-dir', type=str, default='logs', 
-                        help='Directory for log files')
+    parser.add_argument("--no-equity", action="store_true",
+                        help="Exclude equity tokens")
+    
+    parser.add_argument("--no-futures", action="store_true",
+                        help="Exclude futures tokens")
+    
+    parser.add_argument("--options", action="store_true",
+                        help="Include options tokens")
+    
+    parser.add_argument("--equity-limit", type=int,
+                        help="Maximum number of equity tokens to process")
+    
+    parser.add_argument("--futures-limit", type=int,
+                        help="Maximum number of futures tokens to process")
+    
+    parser.add_argument("--options-limit", type=int,
+                        help="Maximum number of options tokens to process")
+    
+    parser.add_argument("--all-options", action="store_true",
+                        help="Include all options (not just ATM)")
+    
+    parser.add_argument("--strike-buffer", type=int, default=1,
+                        help="Number of strikes above and below ATM to include (default: 1)")
+    
+    parser.add_argument("--exact-atm", action="store_true",
+                        help="Select only the exact ATM strike (1 call and 1 put per future)")
+    
+    parser.add_argument("--log-dir", type=str, default="logs",
+                        help="Directory to store log files (default: logs)")
     
     args = parser.parse_args()
     
+    # Setup console logging
+    setup_console_logging()
+    
+    # Run monitor with arguments
     run_monitor(
         refresh_interval=args.refresh,
         include_equity=not args.no_equity,
@@ -194,6 +242,9 @@ def main():
         equity_limit=args.equity_limit,
         futures_limit=args.futures_limit,
         options_limit=args.options_limit,
+        atm_only=not args.all_options,
+        strike_buffer=args.strike_buffer,
+        exact_atm_only=args.exact_atm,
         log_dir=args.log_dir
     )
 

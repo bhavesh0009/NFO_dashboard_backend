@@ -224,6 +224,62 @@ class EquityMarketDataManager:
         logger.info(f"✅ Equity market data fetch and store complete. Success: {results['success']}, Errors: {results['errors']}")
         return results
 
+    def fetch_and_store_equity_market_data_for_token(self, token: str, name: str, exchange: str, interval: str = None) -> Dict[str, Any]:
+        """
+        Fetch and store historical equity market data for a single token.
+        
+        Args:
+            token: Equity token ID
+            name: Symbol name
+            exchange: Exchange segment
+            interval: Data interval (e.g., ONE_DAY, ONE_MINUTE)
+            
+        Returns:
+            Dict[str, Any]: Results summary
+        """
+        try:
+            if interval is None:
+                interval = config.get('equity_market_data', 'default_interval')
+                
+            logger.info(f"Fetching {interval} data for {name} ({token})...")
+            
+            # Fetch data
+            response = self.fetch_equity_market_data(token, exchange, name, interval)
+            
+            if not response:
+                logger.error(f"Failed to fetch data for {name} ({token})")
+                return {'success': False, 'error': 'API request failed'}
+                
+            # Extract data
+            data = response.get('data', [])
+            
+            if not data:
+                logger.warning(f"No data returned for {name} ({token})")
+                return {'success': False, 'error': 'No data returned'}
+                
+            # Store data
+            if self.db_manager:
+                success = self.db_manager.store_historical_data(token, name, data)
+                if success:
+                    logger.info(f"Successfully stored {len(data)} records for {name} ({token})")
+                    return {
+                        'success': True,
+                        'records': len(data),
+                        'token': token,
+                        'name': name
+                    }
+                else:
+                    logger.error(f"Failed to store data for {name} ({token})")
+                    return {'success': False, 'error': 'Database storage failed'}
+            else:
+                logger.error(f"Database manager not available for {name} ({token})")
+                return {'success': False, 'error': 'Database manager not available'}
+                
+        except Exception as e:
+            error_msg = f"Error processing {name} ({token}): {str(e)}"
+            logger.error(error_msg)
+            return {'success': False, 'error': error_msg}
+
 if __name__ == "__main__":
     # Test the equity market data manager
     try:

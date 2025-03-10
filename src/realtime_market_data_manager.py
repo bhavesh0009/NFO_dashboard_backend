@@ -99,27 +99,41 @@ class RealtimeMarketDataManager:
     
     def get_options_tokens(self, limit: Optional[int] = None) -> pd.DataFrame:
         """
-        Get options tokens from database.
+        Retrieve options tokens from the database.
         
         Args:
-            limit: Maximum number of tokens to fetch (None for all)
+            limit: Maximum number of tokens to return
             
         Returns:
-            pd.DataFrame: DataFrame with options token information
+            DataFrame containing tokens
         """
         try:
+            if not self.db_manager:
+                logger.error("No database manager available")
+                return pd.DataFrame()
+            
+            # Query options tokens
             query = """
-                SELECT token, name, exch_seg
-                FROM token_master
+                SELECT * FROM token_master
                 WHERE token_type = 'OPTIONS'
+                ORDER BY name, strike, expiry
             """
             
             if limit is not None:
                 query += f" LIMIT {limit}"
-                
-            result = self.db_manager.conn.execute(query).fetchdf()
-            logger.info(f"Retrieved {len(result)} options tokens from database")
-            return result
+            
+            # Execute query
+            tokens_df = self.db_manager.conn.execute(query).fetchdf()
+            
+            logger.info(f"Retrieved {len(tokens_df)} options tokens from database")
+            
+            # Debug info about the dataframe structure
+            if not tokens_df.empty:
+                logger.debug(f"Options dataframe columns: {tokens_df.columns.tolist()}")
+                logger.debug(f"Sample options token row: {tokens_df.iloc[0].to_dict()}")
+            
+            return tokens_df
+            
         except Exception as e:
             logger.error(f"Error retrieving options tokens: {str(e)}")
             return pd.DataFrame()
@@ -346,13 +360,179 @@ class RealtimeMarketDataManager:
             logger.error(f"Error storing real-time market data: {str(e)}")
             return False
     
+    def get_atm_options_tokens(self, futures_data: List[Dict[str, Any]], strike_buffer: int = 1, exact_atm_only: bool = False) -> pd.DataFrame:
+        """
+        Get ATM option tokens based on futures prices.
+        
+        Args:
+            futures_data: List of futures data dictionaries with LTP information
+            strike_buffer: Number of strikes above and below ATM to include
+            exact_atm_only: If True, only select the single closest strike to ATM for each underlying
+            
+        Returns:
+            DataFrame containing only ATM option tokens
+        """
+        if not futures_data:
+            logger.warning("No futures data available to determine ATM options")
+            return pd.DataFrame()
+            
+        # Get all options tokens as base
+        all_options = self.get_options_tokens()
+        
+        if all_options.empty:
+            return pd.DataFrame()
+            
+        # Create mapping of underlying name to futures price using token_master table
+        futures_prices = {}
+        
+        # First, get token IDs from futures data (camelCase in the API response, snake_case in DB)
+        if futures_data and len(futures_data) > 0:
+            logger.debug(f"Sample data keys: {list(futures_data[0].keys()) if futures_data else 'No data'}")
+        
+        # Direct lookup approach using futures data only
+        if self.db_manager:
+            try:
+                # Query each token individually (more reliable)
+                for data in futures_data:
+                    if 'symbolToken' in data and 'ltp' in data:
+                        symbol_token = data['symbolToken']
+                        ltp = data['ltp']
+                        
+                        # Query token_master for this token
+                        query = """
+                            SELECT name FROM token_master
+                            WHERE token = ? AND token_type = 'FUTURES'
+                        """
+                        result = self.db_manager.conn.execute(query, [symbol_token]).fetchone()
+                        if result:
+                            name = result[0]
+                            futures_prices[name] = ltp
+                            logger.debug(f"Found name {name} for token {symbol_token} with price {ltp}")
+                
+                logger.info(f"Direct lookup: Extracted futures prices for {len(futures_prices)} symbols")
+                
+            except Exception as e:
+                logger.error(f"Error in direct futures price lookup: {str(e)}")
+        
+        if not futures_prices:
+            logger.warning("Could not extract futures prices from data")
+            return pd.DataFrame()
+            
+        logger.info(f"Total futures prices available: {len(futures_prices)}")
+        for name, price in list(futures_prices.items())[:5]:  # Show first 5 for debugging
+            logger.debug(f"Futures price for {name}: {price}")
+        
+        # Ensure the options dataframe has the correct columns
+        required_columns = ['name', 'strike', 'strike_distance']
+        missing_columns = [col for col in required_columns if col not in all_options.columns]
+        if missing_columns:
+            logger.error(f"Options dataframe missing required columns: {missing_columns}")
+            # Create a sample row for debugging
+            if not all_options.empty:
+                logger.debug(f"Sample options row: {all_options.iloc[0].to_dict()}")
+                logger.debug(f"Available columns: {all_options.columns.tolist()}")
+            return pd.DataFrame()
+        
+        # Ensure strike column is numeric
+        all_options['strike'] = pd.to_numeric(all_options['strike'], errors='coerce')
+        
+        if exact_atm_only:
+            # For exact ATM, we'll find the closest strike per underlying and option type
+            logger.info("Using exact ATM mode - selecting only the closest strike per underlying")
+            
+            # First, group options by name and option type (CE/PE)
+            all_options['option_type'] = all_options['symbol'].str.extract(r'(CE|PE)$')
+            
+            # Create an empty dataframe to store the results
+            atm_options = pd.DataFrame()
+            
+            # For each underlying name and option type
+            for name, name_group in all_options.groupby('name'):
+                if name not in futures_prices:
+                    continue
+                    
+                future_price = futures_prices[name]
+                
+                # Get strike distance for this name
+                strike_distance = name_group['strike_distance'].iloc[0]
+                if pd.isna(strike_distance):
+                    # Use default values
+                    if name == 'NIFTY':
+                        strike_distance = 50
+                    elif name == 'BANKNIFTY':
+                        strike_distance = 100
+                    else:
+                        strike_distance = 5
+                
+                # For each option type (CE/PE), find the closest strike
+                for option_type, type_group in name_group.groupby('option_type'):
+                    # Calculate distance to ATM for each strike
+                    type_group['atm_distance'] = abs(type_group['strike'] - future_price)
+                    
+                    # Get the row with minimum distance
+                    closest_strike = type_group.loc[type_group['atm_distance'].idxmin()]
+                    
+                    # Add to results
+                    atm_options = pd.concat([atm_options, pd.DataFrame([closest_strike])])
+            
+            logger.info(f"Selected {len(atm_options)} exact ATM options (1 call + 1 put per underlying)")
+            return atm_options
+        else:
+            # Function to determine if an option is ATM or near-ATM
+            def is_near_atm(row):
+                try:
+                    name = row['name']
+                    if pd.isna(name) or name not in futures_prices:
+                        return False
+                    
+                    strike = row['strike']
+                    if pd.isna(strike):
+                        return False
+                        
+                    future_price = futures_prices[name]
+                    strike_distance = row.get('strike_distance')
+                    
+                    # If strike_distance is not available, use a default value
+                    if not strike_distance or pd.isna(strike_distance):
+                        # Use common values based on index or stock
+                        if name == 'NIFTY':
+                            strike_distance = 50
+                        elif name == 'BANKNIFTY':
+                            strike_distance = 100
+                        else:
+                            strike_distance = 5  # Default for stocks
+                    
+                    # Calculate how many strike distances away from ATM
+                    strikes_away = abs(future_price - strike) / strike_distance
+                    
+                    # Return True if within buffer range
+                    return strikes_away <= strike_buffer
+                except Exception as e:
+                    logger.debug(f"Error in is_near_atm for row {row.get('name', 'unknown')}: {str(e)}")
+                    return False
+            
+            try:
+                # Filter options to only include ATM and near-ATM
+                atm_options = all_options[all_options.apply(is_near_atm, axis=1)]
+                
+                logger.info(f"Filtered from {len(all_options)} to {len(atm_options)} ATM options (buffer={strike_buffer})")
+                return atm_options
+            except Exception as e:
+                logger.error(f"Error filtering ATM options: {str(e)}")
+                if not all_options.empty:
+                    logger.debug(f"First few rows of all_options: {all_options.head().to_dict()}")
+                return pd.DataFrame()
+
     def fetch_and_store_realtime_data(self, 
                                      include_equity: bool = True, 
                                      include_futures: bool = True, 
                                      include_options: bool = False,
                                      equity_limit: Optional[int] = None,
                                      futures_limit: Optional[int] = None,
-                                     options_limit: Optional[int] = None) -> Dict[str, Any]:
+                                     options_limit: Optional[int] = None,
+                                     atm_only: bool = True,
+                                     strike_buffer: int = 1,
+                                     exact_atm_only: bool = False) -> Dict[str, Any]:
         """
         Fetch and store real-time market data for specified instrument types.
         
@@ -360,21 +540,81 @@ class RealtimeMarketDataManager:
             include_equity: Whether to include equity tokens
             include_futures: Whether to include futures tokens
             include_options: Whether to include options tokens
-            equity_limit: Maximum number of equity tokens to process (None for all)
-            futures_limit: Maximum number of futures tokens to process (None for all)
-            options_limit: Maximum number of options tokens to process (None for all)
+            equity_limit: Maximum number of equity tokens to include
+            futures_limit: Maximum number of futures tokens to include
+            options_limit: Maximum number of options tokens to include
+            atm_only: Whether to filter options to only ATM strikes (only applies if include_options is True)
+            strike_buffer: Number of strikes above and below ATM to include (only applies if atm_only is True)
+            exact_atm_only: If True, only select the single closest strike per underlying (only applies if atm_only is True)
             
         Returns:
-            Dict[str, Any]: Results dictionary with success and error counts
+            Dictionary with results summary
         """
         results = {
+            'total': 0,
             'success': 0,
-            'errors': 0,
-            'fetched_tokens': 0,
-            'unfetched_tokens': 0
+            'equity': 0,
+            'futures': 0,
+            'options': 0,
+            'failures': 0,
+            'errors': []
         }
         
         try:
+            # First pass: Process equity and futures to get prices
+            futures_data = []
+            
+            if include_futures:
+                # Collect futures tokens
+                futures_tokens = self.get_futures_tokens(futures_limit)
+                logger.info(f"Retrieved {len(futures_tokens)} futures tokens for ATM calculation")
+                
+                if not futures_tokens.empty:
+                    # Prepare exchange tokens for futures
+                    futures_exchange_tokens = self.prepare_exchange_tokens(futures_tokens)
+                    
+                    # Split into batches
+                    futures_batches = self.batch_tokens(futures_exchange_tokens)
+                    logger.info(f"Split futures tokens into {len(futures_batches)} batches")
+                    
+                    # Process each batch
+                    for i, batch in enumerate(futures_batches):
+                        logger.info(f"Processing futures batch {i+1}/{len(futures_batches)}")
+                        
+                        # Fetch real-time data
+                        response = self.fetch_realtime_market_data(batch)
+                        
+                        if response:
+                            # Process response
+                            fetched, unfetched = self.process_market_data_response(response)
+                            
+                            # Store futures data for ATM calculation
+                            futures_data.extend(fetched)
+                            logger.info(f"Batch {i+1}: Added {len(fetched)} futures records to ATM calculation data")
+                            
+                            # Store fetched data
+                            if fetched:
+                                if self.store_realtime_market_data(fetched):
+                                    results['success'] += len(fetched)
+                                    results['futures'] += len(fetched)
+                        else:
+                            logger.warning(f"No response for futures batch {i+1}")
+                else:
+                    logger.warning("No futures tokens found in database")
+            
+            logger.info(f"Collected {len(futures_data)} total futures records for ATM calculation")
+            
+            # Log sample of futures data to help with debugging
+            if futures_data and len(futures_data) > 0:
+                sample = futures_data[0]
+                logger.debug(f"Sample futures data: {sample}")
+                if 'symbolToken' in sample:
+                    logger.debug(f"Sample token: {sample['symbolToken']}")
+                if 'tradingSymbol' in sample:
+                    logger.debug(f"Sample trading symbol: {sample['tradingSymbol']}")
+                if 'ltp' in sample:
+                    logger.debug(f"Sample price: {sample['ltp']}")
+            
             # Collect tokens
             all_tokens = pd.DataFrame()
             
@@ -382,56 +622,73 @@ class RealtimeMarketDataManager:
                 equity_tokens = self.get_equity_tokens(equity_limit)
                 all_tokens = pd.concat([all_tokens, equity_tokens])
             
-            if include_futures:
-                futures_tokens = self.get_futures_tokens(futures_limit)
-                all_tokens = pd.concat([all_tokens, futures_tokens])
-            
+            # Second pass: Handle options (ATM only if specified) and any remaining equity
             if include_options:
-                options_tokens = self.get_options_tokens(options_limit)
+                if atm_only and futures_data:
+                    # Get ATM options tokens based on futures prices
+                    logger.info(f"Attempting to get ATM options tokens with strike buffer {strike_buffer}, exact_atm_only={exact_atm_only}")
+                    options_tokens = self.get_atm_options_tokens(
+                        futures_data, 
+                        strike_buffer=strike_buffer,
+                        exact_atm_only=exact_atm_only
+                    )
+                    if not options_tokens.empty:
+                        logger.info(f"Successfully retrieved {len(options_tokens)} ATM options tokens")
+                    else:
+                        logger.warning("No ATM options tokens found, check futures price extraction")
+                else:
+                    # Get all options tokens
+                    options_tokens = self.get_options_tokens(options_limit)
+                    logger.info(f"Retrieved all {len(options_tokens)} options tokens (not filtered for ATM)")
+                
                 all_tokens = pd.concat([all_tokens, options_tokens])
             
-            if all_tokens.empty:
+            # Skip futures since we've already processed them
+            # This also prevents processing futures tokens twice
+            
+            if all_tokens.empty and not futures_data:
                 logger.warning("No tokens to process")
                 return results
             
-            # Prepare exchange tokens
-            exchange_tokens = self.prepare_exchange_tokens(all_tokens)
-            
-            # Split into batches
-            batches = self.batch_tokens(exchange_tokens)
-            
-            # Process each batch
-            for i, batch in enumerate(batches):
-                logger.info(f"Processing batch {i+1}/{len(batches)}")
+            # Prepare exchange tokens if we have any tokens left to process
+            if not all_tokens.empty:
+                exchange_tokens = self.prepare_exchange_tokens(all_tokens)
                 
-                # Fetch real-time data
-                response = self.fetch_realtime_market_data(batch)
+                # Split into batches
+                batches = self.batch_tokens(exchange_tokens)
                 
-                if response:
-                    # Process response
-                    fetched, unfetched = self.process_market_data_response(response)
+                # Process each batch
+                for i, batch in enumerate(batches):
+                    logger.info(f"Processing batch {i+1}/{len(batches)}")
                     
-                    # Store fetched data
-                    if fetched:
-                        if self.store_realtime_market_data(fetched):
-                            results['success'] += 1
-                        else:
-                            results['errors'] += 1
+                    # Fetch real-time data
+                    response = self.fetch_realtime_market_data(batch)
                     
-                    # Update counts
-                    results['fetched_tokens'] += len(fetched)
-                    results['unfetched_tokens'] += len(unfetched)
-                else:
-                    results['errors'] += 1
-                
-                # Respect rate limit
-                if i < len(batches) - 1:  # Don't delay after the last batch
-                    logger.info(f"Waiting {self.rate_limit_delay} seconds before next batch...")
-                    time.sleep(self.rate_limit_delay)
+                    if response:
+                        # Process response
+                        fetched, unfetched = self.process_market_data_response(response)
+                        
+                        # Store fetched data
+                        if fetched:
+                            if self.store_realtime_market_data(fetched):
+                                results['success'] += len(fetched)
+                                
+                                # Count by instrument type
+                                for item in fetched:
+                                    symbol = item.get('tradingSymbol', '')
+                                    if 'FUT' in symbol:
+                                        results['futures'] += 1
+                                    elif 'CE' in symbol or 'PE' in symbol:
+                                        results['options'] += 1
+                                    else:
+                                        results['equity'] += 1
             
+            results['total'] = results['success'] + results['failures']
             return results
             
         except Exception as e:
-            logger.error(f"Error in fetch_and_store_realtime_data: {str(e)}")
-            results['errors'] += 1
+            error_msg = f"Error fetching and storing real-time data: {str(e)}"
+            logger.error(error_msg)
+            results['errors'].append(error_msg)
+            results['failures'] += 1
             return results 

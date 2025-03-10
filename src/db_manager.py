@@ -46,14 +46,39 @@ class DBManager:
                     tick_size DECIMAL(18,6),
                     token_type VARCHAR,  -- 'FUTURES' or 'EQUITY'
                     futures_token VARCHAR,  -- Reference to futures token for equity
+                    strike_distance DECIMAL(18,6),  -- Distance between adjacent strikes for options
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (token)
                 )
             """)
             
+            # Check if strike_distance column exists, add it if not (for backward compatibility)
+            # Instead of selecting from the column directly, we'll check the information schema
+            try:
+                # Check if the column exists using information schema
+                column_check = self.conn.execute("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'token_master' AND column_name = 'strike_distance'
+                """).fetchall()
+                
+                if not column_check:
+                    # Column doesn't exist, add it
+                    logger.info("Adding strike_distance column to token_master table...")
+                    self.conn.execute("""
+                        ALTER TABLE token_master ADD COLUMN strike_distance DECIMAL(18,6)
+                    """)
+                    logger.info("✅ strike_distance column added successfully")
+            except Exception as e:
+                # Handle error during column check/addition
+                logger.warning(f"⚠️ Note: Could not verify or add strike_distance column: {str(e)}")
+                logger.warning("This may happen with a fresh database; proceeding with normal operation.")
+            
             logger.info("✅ Database tables initialized successfully")
         except Exception as e:
             logger.error(f"❌ Error initializing database tables: {str(e)}")
+            # Check if we need to handle database corruption
+            self._handle_corrupted_database()
             raise
     
     def store_tokens(self, tokens_data: pd.DataFrame) -> bool:
@@ -71,15 +96,22 @@ class DBManager:
             required_columns = [
                 'token', 'symbol', 'name', 'expiry', 'strike', 'lotsize',
                 'instrumenttype', 'exch_seg', 'tick_size', 'token_type',
-                'futures_token'
+                'futures_token', 'strike_distance'
             ]
+            
+            # Select and reorder columns - handle case where strike_distance might not exist
+            # in older code still passing data to this method
+            df_columns = tokens_data.columns.tolist()
+            if 'strike_distance' not in df_columns:
+                tokens_data['strike_distance'] = None
+                logger.warning("⚠️ strike_distance column not found in input data, adding with NULL values")
             
             # Select and reorder columns
             tokens_data = tokens_data[required_columns].copy()
             
             # Log sample data before storage
             logger.info("\nSample data before storage:")
-            logger.info(tokens_data[['symbol', 'token_type', 'expiry', 'futures_token']].head())
+            logger.info(tokens_data[['symbol', 'token_type', 'expiry', 'futures_token', 'strike_distance']].head())
             
             # Clear existing data and insert new
             self.conn.execute("DELETE FROM token_master")
@@ -89,31 +121,83 @@ class DBManager:
                 INSERT INTO token_master (
                     token, symbol, name, expiry, strike, lotsize,
                     instrumenttype, exch_seg, tick_size, token_type,
-                    futures_token, created_at
+                    futures_token, strike_distance, created_at
                 )
                 SELECT 
                     token, symbol, name, expiry, strike, lotsize,
                     instrumenttype, exch_seg, tick_size, token_type,
-                    futures_token, CURRENT_TIMESTAMP
+                    futures_token, strike_distance, CURRENT_TIMESTAMP
                 FROM tokens_data
             """)
             
-            # Verify the insertion
+            # Log row count
             count = self.conn.execute("SELECT COUNT(*) FROM token_master").fetchone()[0]
             logger.info(f"✅ Stored {count} tokens in master table")
             
-            # Show sample data by token type
-            for token_type in [config.get('token_types', 'futures'), config.get('token_types', 'equity')]:
-                sample = self.conn.execute(f"""
-                    SELECT token, symbol, name, token_type, futures_token, expiry
-                    FROM token_master 
-                    WHERE token_type = '{token_type}'
-                    LIMIT 3
-                """).fetchall()
-                logger.info(f"\nSample {token_type} data from database:")
-                for row in sample:
-                    logger.info(row)
+            # Get sample data for verification
+            logger.info("\nSample FUTURES data from database:")
+            futures_sample = self.conn.execute("""
+                SELECT token, symbol, name, token_type, futures_token, expiry 
+                FROM token_master 
+                WHERE token_type = 'FUTURES' 
+                LIMIT 3
+            """).fetchall()
+            for row in futures_sample:
+                logger.info(row)
+                
+            logger.info("\nSample EQUITY data from database:")
+            equity_sample = self.conn.execute("""
+                SELECT token, symbol, name, token_type, futures_token, expiry 
+                FROM token_master 
+                WHERE token_type = 'EQUITY' 
+                LIMIT 3
+            """).fetchall()
+            for row in equity_sample:
+                logger.info(row)
+                
+            # New: Log sample options data to verify strike_distance
+            logger.info("\nSample OPTIONS data from database with strike_distance:")
+            options_sample = self.conn.execute("""
+                SELECT token, symbol, name, token_type, strike, strike_distance 
+                FROM token_master 
+                WHERE token_type = 'OPTIONS' 
+                AND strike_distance IS NOT NULL
+                LIMIT 5
+            """).fetchall()
             
+            if options_sample:
+                for row in options_sample:
+                    logger.info(row)
+            else:
+                # Check if there are options without strike_distance
+                no_distance_count = self.conn.execute("""
+                    SELECT COUNT(*) FROM token_master 
+                    WHERE token_type = 'OPTIONS' 
+                    AND strike_distance IS NULL
+                """).fetchone()[0]
+                
+                logger.warning(f"⚠️ No options found with strike_distance. {no_distance_count} options have NULL strike_distance.")
+                
+                # Check if there are any strike_distance values at all
+                any_distance = self.conn.execute("""
+                    SELECT COUNT(*) FROM token_master 
+                    WHERE strike_distance IS NOT NULL
+                """).fetchone()[0]
+                
+                if any_distance > 0:
+                    some_distances = self.conn.execute("""
+                        SELECT name, strike_distance 
+                        FROM token_master 
+                        WHERE strike_distance IS NOT NULL
+                        GROUP BY name, strike_distance
+                        LIMIT 5
+                    """).fetchall()
+                    logger.info("Some records do have strike_distance values:")
+                    for row in some_distances:
+                        logger.info(row)
+                else:
+                    logger.warning("⚠️ No records found with strike_distance values at all.")
+                
             return True
         except Exception as e:
             logger.error(f"❌ Error storing tokens: {str(e)}")

@@ -173,32 +173,39 @@ def batch_equity_market_data(batch_size=5, limit=None, verbose=False, interval=N
 
 def test_realtime_market_data(include_equity=True, include_futures=True, include_options=False, 
                              equity_limit=None, futures_limit=None, options_limit=None, 
-                             store=True, verbose=False):
+                             store=True, verbose=False, atm_only=True, strike_buffer=1, exact_atm_only=False):
     """
-    Test fetching real-time market data.
+    Test real-time market data functionality.
     
     Args:
         include_equity: Whether to include equity tokens
         include_futures: Whether to include futures tokens
         include_options: Whether to include options tokens
-        equity_limit: Maximum number of equity tokens to process (None for all)
-        futures_limit: Maximum number of futures tokens to process (None for all)
-        options_limit: Maximum number of options tokens to process (None for all)
-        store: Whether to store data in the database
+        equity_limit: Maximum number of equity tokens to process
+        futures_limit: Maximum number of futures tokens to process
+        options_limit: Maximum number of options tokens to process
+        store: Whether to store data in database
         verbose: Whether to print sample data
+        atm_only: Whether to filter options to only ATM strikes
+        strike_buffer: Number of strikes above and below ATM to include
+        exact_atm_only: If True, only select the exact ATM strike per underlying
         
     Returns:
-        bool: True if successful, False otherwise
+        bool: Success status
     """
     try:
-        logger.info("===== Testing Real-time Market Data =====")
-        logger.info(f"Equity: {'[Y]' if include_equity else '[N]'} (limit: {equity_limit or 'All'})")
-        logger.info(f"Futures: {'[Y]' if include_futures else '[N]'} (limit: {futures_limit or 'All'})")
-        logger.info(f"Options: {'[Y]' if include_options else '[N]'} (limit: {options_limit or 'All'})")
-        logger.info(f"Store: {'[Y]' if store else '[N]'}, Verbose: {'[Y]' if verbose else '[N]'}")
+        logger.info("Testing real-time market data functionality...")
         
-        # Initialize managers
+        # Set debug logging if verbose
+        if verbose:
+            import logging
+            logger.setLevel(logging.DEBUG)
+            logger.debug("Debug logging enabled")
+        
+        # Create DBManager instance
         db_manager = DBManager()
+        
+        # Create RealtimeMarketDataManager instance
         manager = RealtimeMarketDataManager(db_manager=db_manager)
         
         # Fetch and store real-time market data
@@ -208,22 +215,29 @@ def test_realtime_market_data(include_equity=True, include_futures=True, include
             include_options=include_options,
             equity_limit=equity_limit,
             futures_limit=futures_limit,
-            options_limit=options_limit
+            options_limit=options_limit,
+            atm_only=atm_only,
+            strike_buffer=strike_buffer,
+            exact_atm_only=exact_atm_only
         )
         
-        # Print summary
-        logger.info("=== Real-time Market Data Results ===")
-        logger.info(f"Batches processed: {results['success'] + results['errors']}")
-        logger.info(f"Successful batches: {results['success']}")
-        logger.info(f"Failed batches: {results['errors']}")
-        logger.info(f"Tokens fetched: {results['fetched_tokens']}")
-        logger.info(f"Tokens unfetched: {results['unfetched_tokens']}")
+        # Print results
+        logger.info(f"Processed {results.get('total', 0)} tokens")
+        logger.info(f"Success: {results.get('success', 0)}")
+        logger.info(f"- Equity: {results.get('equity', 0)}")
+        logger.info(f"- Futures: {results.get('futures', 0)}")
+        logger.info(f"- Options: {results.get('options', 0)}")
+        logger.info(f"Failures: {results.get('failures', 0)}")
         
-        db_manager.close()
-        return results['success'] > 0
+        # If there were errors, log them
+        if results.get('errors'):
+            for error in results.get('errors'):
+                logger.error(f"Error: {error}")
+        
+        return True
         
     except Exception as e:
-        logger.error(f"❌ Error testing real-time market data: {str(e)}")
+        logger.error(f"Error testing real-time market data: {str(e)}")
         return False
 
 def main():
@@ -266,8 +280,12 @@ def main():
     realtime_parser.add_argument('--equity-limit', type=int, help='Maximum number of equity tokens to process')
     realtime_parser.add_argument('--futures-limit', type=int, help='Maximum number of futures tokens to process')
     realtime_parser.add_argument('--options-limit', type=int, help='Maximum number of options tokens to process')
-    realtime_parser.add_argument('--no-store', action='store_true', help='Do not store data in the database')
+    realtime_parser.add_argument('--store', action='store_true', help='Store data in database (default)')
+    realtime_parser.add_argument('--no-store', action='store_true', help='Do not store data in database')
     realtime_parser.add_argument('--verbose', action='store_true', help='Print sample data')
+    realtime_parser.add_argument('--all-options', action='store_true', help='Include all options (not just ATM)')
+    realtime_parser.add_argument('--strike-buffer', type=int, default=1, help='Number of strikes above and below ATM to include (default: 1)')
+    realtime_parser.add_argument('--exact-atm', action='store_true', help='Select only the exact ATM strike (1 call and 1 put per future)')
     
     # Parse arguments
     args = parser.parse_args()
@@ -282,6 +300,7 @@ def main():
     elif args.command == 'batch':
         success = batch_equity_market_data(args.batch_size, args.limit, args.verbose, args.interval)
     elif args.command == 'realtime':
+        logger.info(f"Running real-time market data command...")
         success = test_realtime_market_data(
             include_equity=not args.no_equity,
             include_futures=not args.no_futures,
@@ -290,7 +309,10 @@ def main():
             futures_limit=args.futures_limit,
             options_limit=args.options_limit,
             store=not args.no_store,
-            verbose=args.verbose
+            verbose=args.verbose,
+            atm_only=not args.all_options,
+            strike_buffer=args.strike_buffer,
+            exact_atm_only=args.exact_atm
         )
     else:
         # Default: run basic tests
