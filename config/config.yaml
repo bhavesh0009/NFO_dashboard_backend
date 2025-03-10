@@ -53,4 +53,16 @@ equity_market_data:
     fifteen_minutes: "FIFTEEN_MINUTE"
     thirty_minutes: "THIRTY_MINUTE"
     hour: "ONE_HOUR"
-    day: "ONE_DAY" 
+    day: "ONE_DAY"
+
+# Real-time Market Data Configuration
+realtime_market_data:
+  mode: "FULL"  # Mode for getMarketData API (FULL, OHLC, LTP)
+  max_tokens_per_request: 50  # Maximum number of tokens per API request
+  rate_limiting:
+    request_delay: 1.0  # Seconds between API requests (rate limit is 1 request per second)
+  refresh_interval: 60  # Seconds between real-time data refreshes
+  default_options:
+    include_equity: true
+    include_futures: true
+    include_options: false 

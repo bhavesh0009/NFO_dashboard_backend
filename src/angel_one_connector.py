@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from SmartApi import SmartConnect
 import pyotp
 from logzero import logger
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 load_dotenv()
 
@@ -70,7 +70,8 @@ class AngelOneConnector:
                 logger.error("Not connected to Angel One API")
                 return None
                 
-            profile = self.api.getProfile()
+            # Pass the auth_token as refreshToken parameter
+            profile = self.api.getProfile(refreshToken=self.auth_token)
             if profile.get('status'):
                 return profile['data']
             else:
@@ -79,6 +80,57 @@ class AngelOneConnector:
                 
         except Exception as e:
             logger.error(f"Error getting profile: {str(e)}")
+            return None
+    
+    def get_market_data(self, mode: str, exchange_tokens: Dict[str, List[str]]) -> Optional[Dict[str, Any]]:
+        """
+        Get real-time market data for specified tokens.
+        
+        Args:
+            mode: Data mode ("FULL", "OHLC", or "LTP")
+            exchange_tokens: Dictionary with exchange segments as keys and token lists as values
+                             Example: {"NSE": ["3045", "881"], "NFO": ["58662"]}
+        
+        Returns:
+            Optional[Dict[str, Any]]: Market data response if successful, None otherwise
+        """
+        try:
+            if not self.api:
+                logger.error("Not connected to Angel One API")
+                return None
+            
+            # Validate input
+            if not isinstance(exchange_tokens, dict) or not exchange_tokens:
+                logger.error("Invalid exchange_tokens format")
+                return None
+            
+            # Check if mode is valid
+            valid_modes = ["FULL", "OHLC", "LTP"]
+            if mode not in valid_modes:
+                logger.error(f"Invalid mode: {mode}. Must be one of {valid_modes}")
+                return None
+            
+            # Count total tokens
+            total_tokens = sum(len(tokens) for tokens in exchange_tokens.values())
+            if total_tokens > 50:
+                logger.warning(f"Requesting data for {total_tokens} tokens, which exceeds the recommended limit of 50")
+            
+            # Make the API call
+            logger.info(f"Fetching market data in {mode} mode for {total_tokens} tokens")
+            response = self.api.getMarketData(mode, exchange_tokens)
+            
+            # Check response
+            if response.get('status'):
+                fetched = len(response.get('data', {}).get('fetched', []))
+                unfetched = len(response.get('data', {}).get('unfetched', []))
+                logger.info(f"Successfully fetched market data: {fetched} fetched, {unfetched} unfetched")
+                return response
+            else:
+                logger.error(f"Failed to fetch market data: {response.get('message', 'Unknown error')}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error fetching market data: {str(e)}")
             return None
 
 if __name__ == "__main__":
@@ -90,4 +142,4 @@ if __name__ == "__main__":
         else:
             logger.error("Connection test failed")
     except Exception as e:
-        logger.error(f"Test failed with error: {str(e)}") 
+        logger.error(f"Test failed with error: {str(e)}")

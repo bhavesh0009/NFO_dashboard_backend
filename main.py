@@ -6,11 +6,36 @@ Provides functionality for testing and running different components of the pipel
 
 import sys
 import argparse
+import logging
 from logzero import logger
 from src.angel_one_connector import AngelOneConnector
 from src.token_manager import TokenManager
 from src.db_manager import DBManager
 from src.equity_market_data_manager import EquityMarketDataManager
+from src.realtime_market_data_manager import RealtimeMarketDataManager
+
+# Fix logging for Windows consoles
+def setup_console_logging():
+    """Configure the root logger to prevent Unicode errors in Windows console."""
+    # Replace Unicode characters with ASCII equivalents for console output
+    class AsciiFormatter(logging.Formatter):
+        def format(self, record):
+            msg = super().format(record)
+            # Replace Unicode characters with ASCII equivalents
+            return (msg.replace('✅', '[OK]')
+                      .replace('❌', '[ERROR]')
+                      .replace('✓', '[Y]')
+                      .replace('✗', '[N]'))
+    
+    # Configure the console handler with the ASCII formatter
+    console = logging.StreamHandler()
+    console.setFormatter(AsciiFormatter('%(levelname)s %(message)s'))
+    logging.getLogger().addHandler(console)
+    
+    # Remove existing handlers from the root logger
+    for handler in logging.getLogger().handlers[:]:
+        if isinstance(handler, logging.StreamHandler) and handler != console:
+            logging.getLogger().removeHandler(handler)
 
 def test_connection():
     """Test the connection to Angel One API."""
@@ -146,8 +171,66 @@ def batch_equity_market_data(batch_size=5, limit=None, verbose=False, interval=N
         logger.error(f"❌ Error in batch processing: {str(e)}")
         return False
 
+def test_realtime_market_data(include_equity=True, include_futures=True, include_options=False, 
+                             equity_limit=None, futures_limit=None, options_limit=None, 
+                             store=True, verbose=False):
+    """
+    Test fetching real-time market data.
+    
+    Args:
+        include_equity: Whether to include equity tokens
+        include_futures: Whether to include futures tokens
+        include_options: Whether to include options tokens
+        equity_limit: Maximum number of equity tokens to process (None for all)
+        futures_limit: Maximum number of futures tokens to process (None for all)
+        options_limit: Maximum number of options tokens to process (None for all)
+        store: Whether to store data in the database
+        verbose: Whether to print sample data
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        logger.info("===== Testing Real-time Market Data =====")
+        logger.info(f"Equity: {'[Y]' if include_equity else '[N]'} (limit: {equity_limit or 'All'})")
+        logger.info(f"Futures: {'[Y]' if include_futures else '[N]'} (limit: {futures_limit or 'All'})")
+        logger.info(f"Options: {'[Y]' if include_options else '[N]'} (limit: {options_limit or 'All'})")
+        logger.info(f"Store: {'[Y]' if store else '[N]'}, Verbose: {'[Y]' if verbose else '[N]'}")
+        
+        # Initialize managers
+        db_manager = DBManager()
+        manager = RealtimeMarketDataManager(db_manager=db_manager)
+        
+        # Fetch and store real-time market data
+        results = manager.fetch_and_store_realtime_data(
+            include_equity=include_equity,
+            include_futures=include_futures,
+            include_options=include_options,
+            equity_limit=equity_limit,
+            futures_limit=futures_limit,
+            options_limit=options_limit
+        )
+        
+        # Print summary
+        logger.info("=== Real-time Market Data Results ===")
+        logger.info(f"Batches processed: {results['success'] + results['errors']}")
+        logger.info(f"Successful batches: {results['success']}")
+        logger.info(f"Failed batches: {results['errors']}")
+        logger.info(f"Tokens fetched: {results['fetched_tokens']}")
+        logger.info(f"Tokens unfetched: {results['unfetched_tokens']}")
+        
+        db_manager.close()
+        return results['success'] > 0
+        
+    except Exception as e:
+        logger.error(f"❌ Error testing real-time market data: {str(e)}")
+        return False
+
 def main():
     """Main function with argument parsing for different tasks."""
+    # Setup console logging for Windows compatibility
+    setup_console_logging()
+    
     parser = argparse.ArgumentParser(description="Angel One Data Pipeline")
     
     # Create subparsers for different commands
@@ -175,6 +258,17 @@ def main():
     batch_parser.add_argument('--interval', type=str, default='ONE_DAY',
                             help='Data interval (ONE_MINUTE, FIVE_MINUTE, FIFTEEN_MINUTE, THIRTY_MINUTE, ONE_HOUR, ONE_DAY)')
     
+    # Real-time market data command
+    realtime_parser = subparsers.add_parser('realtime', help='Fetch real-time market data')
+    realtime_parser.add_argument('--no-equity', action='store_true', help='Exclude equity tokens')
+    realtime_parser.add_argument('--no-futures', action='store_true', help='Exclude futures tokens')
+    realtime_parser.add_argument('--options', action='store_true', help='Include options tokens')
+    realtime_parser.add_argument('--equity-limit', type=int, help='Maximum number of equity tokens to process')
+    realtime_parser.add_argument('--futures-limit', type=int, help='Maximum number of futures tokens to process')
+    realtime_parser.add_argument('--options-limit', type=int, help='Maximum number of options tokens to process')
+    realtime_parser.add_argument('--no-store', action='store_true', help='Do not store data in the database')
+    realtime_parser.add_argument('--verbose', action='store_true', help='Print sample data')
+    
     # Parse arguments
     args = parser.parse_args()
     
@@ -187,6 +281,17 @@ def main():
         success = test_equity_market_data(args.limit, args.store, args.verbose, args.interval)
     elif args.command == 'batch':
         success = batch_equity_market_data(args.batch_size, args.limit, args.verbose, args.interval)
+    elif args.command == 'realtime':
+        success = test_realtime_market_data(
+            include_equity=not args.no_equity,
+            include_futures=not args.no_futures,
+            include_options=args.options,
+            equity_limit=args.equity_limit,
+            futures_limit=args.futures_limit,
+            options_limit=args.options_limit,
+            store=not args.no_store,
+            verbose=args.verbose
+        )
     else:
         # Default: run basic tests
         logger.info("Running basic tests (no command specified)...")
