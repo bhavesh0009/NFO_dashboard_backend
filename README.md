@@ -1,6 +1,6 @@
 # Angel One Data Pipeline
 
-_Last Updated: March 10, 2025_
+_Last Updated: March 12, 2025_
 
 ## Overview
 
@@ -16,6 +16,8 @@ This project extracts data from Angel One API and stores it in DuckDB for analys
 - ✅ **Real-time Market Data**: Live market data for spot, futures, and options
 - ✅ **Windows Compatibility**: ASCII-compatible logging for Windows terminals
 - ✅ **Options Analytics**: Strike price normalization and strike distance calculation
+- ✅ **Parquet Exports**: Real-time exports for API consumption after each data refresh
+- ✅ **FastAPI Module**: REST API for accessing market data
 
 ## Prerequisites
 
@@ -196,6 +198,15 @@ python market_data_pipeline.py --refresh 30
 
 # Run with limited number of tokens
 python market_data_pipeline.py --equity-limit 50 --futures-limit 50
+
+# Export market summary to Parquet manually
+python utils/export_market_summary.py
+
+# Export market summary with custom output path
+python utils/export_market_summary.py --output path/to/output.parquet
+
+# Export market summary with custom SQL query
+python utils/export_market_summary.py --sql path/to/query.sql
 ```
 
 ## Data Processing
@@ -216,6 +227,7 @@ The system captures comprehensive real-time market data using Angel One's getMar
 - **Smart Options Filtering**: Automatically identifies and focuses on ATM options
 - **Continuous Monitoring**: Scheduled data collection with market hours awareness
 - **Windows Compatibility**: ASCII-compatible logging for error-free operation in Windows terminals
+- **Automatic Exports**: Exports market summary data to Parquet files after each real-time data refresh
 
 ### ATM Options Processing
 
@@ -259,7 +271,7 @@ The system uses three primary tables:
 
 ```sql
 -- Token Master Table
-CREATE TABLE token_master (
+CREATE TABLE IF NOT EXISTS token_master (
     token VARCHAR,
     symbol VARCHAR,
     name VARCHAR,
@@ -277,7 +289,7 @@ CREATE TABLE token_master (
 )
 
 -- Historical Data Table
-CREATE TABLE historical_data (
+CREATE TABLE IF NOT EXISTS historical_data (
     token VARCHAR,
     symbol_name VARCHAR,
     timestamp TIMESTAMP,
@@ -291,7 +303,7 @@ CREATE TABLE historical_data (
 )
 
 -- Real-time Market Data Table
-CREATE TABLE realtime_market_data (
+CREATE TABLE IF NOT EXISTS realtime_market_data (
     exchange VARCHAR,
     trading_symbol VARCHAR,
     symbol_token VARCHAR,
@@ -391,9 +403,13 @@ If you encounter rate limit errors from the Angel One API:
 ├── utils/
 │   ├── db_utility.py        - Database management tool
 │   ├── reset_for_testing.py - Testing reset utility
-│   └── truncate_db.py       - Database truncation utility
+│   ├── truncate_db.py       - Database truncation utility
+│   └── export_market_summary.py - Market summary Parquet exporter
 ├── logs/                    - Generated log files directory
 ├── db_backups/              - Generated database backups
+├── exports/                 - Generated Parquet files for API
+├── api/                     - FastAPI module for data access
+├── sqls/                    - SQL queries and view definitions
 ├── main.py                  - Application entry point
 ├── .env                     - Environment variables (not tracked)
 ├── nfo_derivatives_hub.duckdb - Default database file
@@ -418,13 +434,14 @@ The system includes a comprehensive orchestration script (`market_data_pipeline.
 2. **Historical Data Refresh**: Updates historical price data for equity tokens
 3. **Market Hours Awareness**: Waits for market open if started before trading hours
 4. **Real-time Monitoring**: Runs continuous real-time market data collection at specified intervals
+5. **Data Export**: Exports market summary to Parquet files after each data refresh for API consumption
 
 ### Pipeline Workflow
 
 The pipeline follows a sequential workflow:
 
 ```
-Start → Token Refresh → Historical Data → Wait for Market Open → Real-time Monitoring
+Start → Token Refresh → Historical Data → Wait for Market Open → Real-time Monitoring (with Parquet exports each iteration)
 ```
 
 Each step handles error conditions gracefully and continues to the next step even if a previous step had errors.
@@ -479,3 +496,135 @@ Add the following entry to your crontab:
 ```
 
 This runs the script at 8:55 AM on weekdays (Monday-Friday).
+
+## API Access
+
+The system provides a FastAPI-based RESTful API for accessing market data:
+
+### Starting the API Server
+
+```bash
+# Start the API server with default settings (localhost:8000)
+python scripts/run_api_server.py
+
+# Specify a different host and port
+python scripts/run_api_server.py --host 0.0.0.0 --port 8080
+
+# Enable auto-reload for development (automatically restart on code changes)
+python scripts/run_api_server.py --reload
+```
+
+### API Endpoints
+
+Once running, the API provides the following endpoints:
+
+- **GET /api/market-summary**: Get market summary data for all symbols
+- **GET /api/market-summary/{symbol}**: Get market summary for a specific symbol
+- **GET /api/market-summary/filter**: Filter market summary by various criteria
+  - Query parameters:
+    - `min_ltp`: Minimum Last Traded Price
+    - `max_ltp`: Maximum Last Traded Price
+    - `min_percent_change`: Minimum percentage change
+    - `max_percent_change`: Maximum percentage change
+
+### API Documentation
+
+The API includes Swagger and ReDoc documentation:
+
+- Swagger UI: <http://localhost:8000/docs>
+- ReDoc: <http://localhost:8000/redoc>
+
+### Example API Usage in Frontend Code
+
+#### Using JavaScript Fetch API
+
+```javascript
+// Get all market summary data
+async function getAllMarketData() {
+  try {
+    const response = await fetch('http://localhost:8000/api/market-summary');
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error fetching market data:', error);
+    return [];
+  }
+}
+
+// Get data for a specific symbol
+async function getSymbolData(symbol) {
+  try {
+    const response = await fetch(`http://localhost:8000/api/market-summary/${symbol}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error(`Error fetching data for ${symbol}:`, error);
+    return null;
+  }
+}
+
+// Filter market data
+async function filterMarketData(filters) {
+  try {
+    const params = new URLSearchParams();
+    
+    if (filters.minLtp) params.append('min_ltp', filters.minLtp);
+    if (filters.maxLtp) params.append('max_ltp', filters.maxLtp);
+    if (filters.minPercentChange) params.append('min_percent_change', filters.minPercentChange);
+    if (filters.maxPercentChange) params.append('max_percent_change', filters.maxPercentChange);
+    
+    const url = `http://localhost:8000/api/market-summary/filter?${params.toString()}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error filtering market data:', error);
+    return [];
+  }
+}
+```
+
+### Response Format
+
+The API returns data in JSON format. Here's an example of the response structure:
+
+```json
+[
+  {
+    "token": "256265",
+    "symbol": "RELIANCE",
+    "name": "RELIANCE INDUSTRIES",
+    "futures_token": "26000",
+    "lotsize": 250,
+    "expiry": "2025-03-27",
+    "ltp": 2345.65,
+    "percent_change": 1.25,
+    "open": 2320.10,
+    "high": 2350.75,
+    "low": 2315.25,
+    "close": 2318.50,
+    "volume": 2500000,
+    "opn_interest": 350000,
+    "week_low_52": 2100.00,
+    "week_high_52": 2500.00,
+    "futures_ltp": 2350.80,
+    "futures_percent_change": 1.35,
+    "futures_volume": 150000,
+    "futures_oi": 75000,
+    "atm_price": 65.75,
+    "atm_price_per_lot": 16437.50,
+    "position_metric": 52.50
+  }
+]
+```

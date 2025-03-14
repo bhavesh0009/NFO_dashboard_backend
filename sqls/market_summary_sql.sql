@@ -1,5 +1,3 @@
-
-create or replace view market_summary_view as
 with equity_master as (
     select tm.token,
         tm.symbol,
@@ -138,4 +136,4 @@ from equity_master em
     left outer join futures_master fm on em.futures_token = fm.token
     left outer join realtime_equity_latest rel on em.name = rel.name
     left outer join realtime_futures_latest rfl on fm.token = rfl.symbol_token
-    left outer join realtime_options_latest rol on em.name = rol.underlying_name
+    left outer join realtime_options_latest rol on em.name = rol.underlying_name)

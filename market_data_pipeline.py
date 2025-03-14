@@ -225,7 +225,7 @@ def run_realtime_monitoring(
     refresh_interval=60,
     include_equity=True,
     include_futures=True,
-    include_options=False,
+    include_options=True,
     equity_limit=None,
     futures_limit=None,
     options_limit=None,
@@ -320,6 +320,13 @@ def run_realtime_monitoring(
             
             if results.get('errors', []):
                 logger.warning(f"Errors: {len(results.get('errors', []))}")
+                
+            # Export market summary after each successful data collection
+            if results.get('success', 0) > 0:
+                logger.info("Exporting market summary after data refresh...")
+                export_success = export_market_summary_to_parquet()
+                if not export_success:
+                    logger.error("Failed to export market summary to Parquet after iteration")
         else:
             logger.info(f"Iteration {iterations}: Market is closed, skipping data fetch.")
         
@@ -344,13 +351,30 @@ def handle_signal(sig, frame):
     logger.info("Received shutdown signal, gracefully shutting down...")
     running = False
 
+def export_market_summary_to_parquet():
+    """
+    Export market summary view to a Parquet file for API consumption.
+    
+    Returns:
+        bool: Success status
+    """
+    logger.info("Exporting market summary view to Parquet file for API consumption...")
+    try:
+        db_manager = DBManager()
+        success = db_manager.export_market_summary_to_parquet()
+        db_manager.close()
+        return success
+    except Exception as e:
+        logger.error(f"Error exporting market summary to Parquet: {str(e)}")
+        return False
+
 def run_pipeline(
     skip_tokens=False,
     skip_history=False,
     history_limit=None,
     include_equity=True,
     include_futures=True,
-    include_options=False,
+    include_options=True,
     equity_limit=None,
     futures_limit=None,
     options_limit=None,
@@ -432,6 +456,11 @@ def run_pipeline(
         logger.info("Pipeline interrupted before real-time monitoring could start")
         monitoring_success = False
     
+    # Step 5: Export market summary to Parquet file for API consumption
+    export_success = export_market_summary_to_parquet()
+    if not export_success:
+        logger.error("Failed to export market summary to Parquet, API may not have latest data")
+    
     logger.info("=" * 80)
     logger.info(f"PIPELINE COMPLETED AT {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("=" * 80)
@@ -453,7 +482,7 @@ def main():
     parser.add_argument("--no-wait", action="store_true", help="Don't wait for market open before starting real-time monitoring")
     parser.add_argument("--no-equity", action="store_true", help="Exclude equity from real-time monitoring")
     parser.add_argument("--no-futures", action="store_true", help="Exclude futures from real-time monitoring")
-    parser.add_argument("--options", action="store_true", help="Include options in real-time monitoring")
+    parser.add_argument("--no-options", action="store_true", help="Exclude options from real-time monitoring")
     parser.add_argument("--equity-limit", type=int, help="Limit equity tokens in real-time monitoring")
     parser.add_argument("--futures-limit", type=int, help="Limit futures tokens in real-time monitoring")
     parser.add_argument("--options-limit", type=int, help="Limit options tokens in real-time monitoring")
@@ -482,7 +511,7 @@ def main():
         history_limit=args.history_limit,
         include_equity=not args.no_equity,
         include_futures=not args.no_futures,
-        include_options=args.options,
+        include_options=not args.no_options,
         equity_limit=args.equity_limit,
         futures_limit=args.futures_limit,
         options_limit=args.options_limit,

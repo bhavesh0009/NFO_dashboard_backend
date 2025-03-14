@@ -52,6 +52,56 @@ class DBManager:
                 )
             """)
             
+            # Create real-time market data table
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS realtime_market_data (
+                    exchange VARCHAR,
+                    trading_symbol VARCHAR,
+                    symbol_token VARCHAR,
+                    ltp DECIMAL(18,6),
+                    open DECIMAL(18,6),
+                    high DECIMAL(18,6),
+                    low DECIMAL(18,6),
+                    close DECIMAL(18,6),
+                    last_trade_qty INTEGER,
+                    exch_feed_time TIMESTAMP,
+                    exch_trade_time TIMESTAMP,
+                    net_change DECIMAL(18,6),
+                    percent_change DECIMAL(18,6),
+                    avg_price DECIMAL(18,6),
+                    trade_volume BIGINT,
+                    opn_interest BIGINT,
+                    lower_circuit DECIMAL(18,6),
+                    upper_circuit DECIMAL(18,6),
+                    tot_buy_quan BIGINT,
+                    tot_sell_quan BIGINT,
+                    week_low_52 DECIMAL(18,6),
+                    week_high_52 DECIMAL(18,6),
+                    depth_json TEXT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (symbol_token, timestamp)
+                )
+            """)
+            
+            # Create historical data table
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS historical_data (
+                    token VARCHAR,
+                    symbol_name VARCHAR,
+                    timestamp TIMESTAMP,
+                    open DECIMAL(18,6),
+                    high DECIMAL(18,6),
+                    low DECIMAL(18,6),
+                    close DECIMAL(18,6),
+                    volume BIGINT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (token, timestamp)
+                )
+            """)
+            
+            # Initialize market summary view
+            self._init_market_summary_view()
+            
             # Check if strike_distance column exists, add it if not (for backward compatibility)
             # Instead of selecting from the column directly, we'll check the information schema
             try:
@@ -80,6 +130,80 @@ class DBManager:
             # Check if we need to handle database corruption
             self._handle_corrupted_database()
             raise
+    
+    def _init_market_summary_view(self):
+        """Initialize the market summary view."""
+        try:
+            # Check if the sql file exists
+            sql_path = os.path.join("sqls", "market_summary_view.sql")
+            if os.path.exists(sql_path):
+                # Read SQL from file
+                with open(sql_path, 'r') as f:
+                    sql = f.read()
+                
+                # Execute the SQL to create/replace the view
+                self.conn.execute(sql)
+                logger.info("✅ Market summary view initialized successfully")
+            else:
+                logger.warning(f"⚠️ Market summary view SQL file not found: {sql_path}")
+        except Exception as e:
+            logger.error(f"❌ Error initializing market summary view: {str(e)}")
+            
+    def export_market_summary_to_parquet(self, output_path=None):
+        """
+        Export market summary data to a Parquet file.
+        
+        Args:
+            output_path: Optional custom output path for the Parquet file
+            
+        Returns:
+            bool: Success status
+        """
+        logger.info("Exporting market summary view to Parquet file...")
+        try:
+            # Check if the view exists
+            check_result = self.conn.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='view' AND name='market_summary_view'
+            """).fetchall()
+            
+            if not check_result:
+                logger.warning("The market_summary_view does not exist, attempting to create it")
+                self._init_market_summary_view()
+                
+                # Check again
+                check_result = self.conn.execute("""
+                    SELECT name FROM sqlite_master 
+                    WHERE type='view' AND name='market_summary_view'
+                """).fetchall()
+                
+                if not check_result:
+                    logger.error("Failed to create market_summary_view")
+                    return False
+            
+            # Query the view
+            result = self.conn.execute("SELECT * FROM market_summary_view").fetchdf()
+            
+            if result.empty:
+                logger.warning("The market_summary_view is empty")
+                return False
+                
+            # Create exports directory if it doesn't exist
+            os.makedirs("exports", exist_ok=True)
+            
+            # Save to Parquet file
+            if output_path:
+                parquet_file = output_path
+            else:
+                parquet_file = os.path.join("exports", "market_summary.parquet")
+                
+            result.to_parquet(parquet_file, index=False)
+            
+            logger.info(f"✅ Successfully exported {len(result)} records to {parquet_file}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to export market summary: {str(e)}")
+            return False
     
     def store_tokens(self, tokens_data: pd.DataFrame) -> bool:
         """
@@ -291,21 +415,7 @@ class DBManager:
             bool: True if successful, False otherwise
         """
         try:
-            # First, create the historical_data table if it doesn't exist
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS historical_data (
-                    token VARCHAR,
-                    symbol_name VARCHAR,
-                    timestamp TIMESTAMP,
-                    open DECIMAL(18,6),
-                    high DECIMAL(18,6),
-                    low DECIMAL(18,6),
-                    close DECIMAL(18,6),
-                    volume BIGINT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (token, timestamp)
-                )
-            """)
+            # Table is now created in _init_tables, no need to create it here
             
             # Format data for insertion
             if not data:

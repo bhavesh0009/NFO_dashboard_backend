@@ -266,36 +266,7 @@ class RealtimeMarketDataManager:
                 logger.warning("No market data to store")
                 return False
             
-            # Create the table if it doesn't exist
-            self.db_manager.conn.execute("""
-                CREATE TABLE IF NOT EXISTS realtime_market_data (
-                    exchange VARCHAR,
-                    trading_symbol VARCHAR,
-                    symbol_token VARCHAR,
-                    ltp DECIMAL(18,6),
-                    open DECIMAL(18,6),
-                    high DECIMAL(18,6),
-                    low DECIMAL(18,6),
-                    close DECIMAL(18,6),
-                    last_trade_qty INTEGER,
-                    exch_feed_time TIMESTAMP,
-                    exch_trade_time TIMESTAMP,
-                    net_change DECIMAL(18,6),
-                    percent_change DECIMAL(18,6),
-                    avg_price DECIMAL(18,6),
-                    trade_volume BIGINT,
-                    opn_interest BIGINT,
-                    lower_circuit DECIMAL(18,6),
-                    upper_circuit DECIMAL(18,6),
-                    tot_buy_quan BIGINT,
-                    tot_sell_quan BIGINT,
-                    week_low_52 DECIMAL(18,6),
-                    week_high_52 DECIMAL(18,6),
-                    depth_json TEXT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (symbol_token, timestamp)
-                )
-            """)
+            # Table is now created in DBManager._init_tables(), so we don't need to create it here
             
             # Process and insert each record
             for record in market_data:

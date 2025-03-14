@@ -39,7 +39,10 @@ This document tracks the development progress of the Angel One Data Pipeline pro
 - [x] Implement real-time market data processing
 - [x] Add cross-platform compatibility for Windows
 - [x] Implement options analytics with strike normalization
-- [ ] Create alert system for failures
+- [x] Create alert system for failures
+- [x] Implement FastAPI module for data access
+- [x] Create real-time Parquet exports for API consumption
+- [x] Centralize database management in DBManager
 
 ## Current Sprint Tasks
 
@@ -49,9 +52,83 @@ This document tracks the development progress of the Angel One Data Pipeline pro
 4. ✅ Enhance SQL statements for better error handling
 5. ✅ Implement options analytics with strike distance calculation
 6. ✅ Implement ATM options filtering for real-time data
-7. [ ] Add data visualization for real-time market data
+7. ✅ Add FastAPI module for market data access
+8. ✅ Resolve DuckDB concurrency issues for the API module
+9. ✅ Centralize database schema management in DBManager
+10. ✅ Implement per-iteration Parquet exports for API consumption
+11. [ ] Add data visualization for real-time market data
 
 ## Implementation Notes
+
+### 2025-03-12: Database Management Centralization
+
+- Implemented comprehensive database management centralization:
+  - Moved all table creation to DBManager._init_tables() method
+  - Created a central method for initializing the market_summary_view
+  - Added a built-in export_market_summary_to_parquet method to DBManager
+  - Eliminated redundant table creation in other manager classes
+  - Consolidated all database-related code in a single class
+- Key benefits:
+  - Single point of schema management
+  - Consistent table schema across all components
+  - Elimination of redundant table creation
+  - Prevention of schema inconsistencies
+  - Proper separation of concerns
+- Technical improvements:
+  - Reduced code duplication
+  - Improved maintainability
+  - Better error handling for database operations
+  - More consistent logging of database operations
+  - Simplified database upgrade path
+- Future enhancements:
+  - Database versioning system
+  - Schema migration support
+  - Database status monitoring
+
+### 2025-03-12: Per-Iteration Parquet Exports
+
+- Implemented real-time exports of market summary data:
+  - Added Parquet file export after each real-time data collection iteration
+  - Created a standalone export utility for manual exports
+  - Added support for direct SQL execution from file for exports
+  - Enhanced error handling for export operations
+- Key features:
+  - Always-fresh data for API consumption
+  - No need to wait for pipeline completion
+  - Standalone utility for manual exports
+  - Automatic recreation of market_summary_view if missing
+  - Clean separation of database and API data access
+- Technical implementation:
+  - Added export code in run_realtime_monitoring function
+  - Created utils/export_market_summary.py utility script
+  - Integrated with centralized DBManager
+  - Added proper error handling and logging
+- Benefits:
+  - Real-time data availability for API
+  - Elimination of database concurrency issues
+  - Improved API performance through direct file access
+  - Reduced database load
+  - More reliable API operation
+
+### 2025-03-12: API Frontend Integration Documentation
+
+- Created comprehensive API integration documentation:
+  - Added JavaScript fetch and axios examples for API calls
+  - Documented all API endpoints and parameters
+  - Provided sample response format
+  - Added detailed usage examples
+  - Updated README.md with API integration details
+- Key features:
+  - Complete code examples for frontend integration
+  - Detailed endpoint documentation
+  - Error handling in example code
+  - Multiple implementation options
+- Benefits:
+  - Easy integration with any frontend framework
+  - Consistency in API usage
+  - Robust error handling
+  - Cross-origin support
+  - Self-documenting API with Swagger UI
 
 ### 2025-03-15: ATM Options Filtering Implementation
 
@@ -449,6 +526,58 @@ This document tracks the development progress of the Angel One Data Pipeline pro
   - Implemented robust error handling with user-friendly messages
   - Added detailed documentation for all utility functions
 
+### 2025-03-15: FastAPI Module Implementation
+
+- Created comprehensive FastAPI module for market data access:
+  - Implemented RESTful API endpoints for market_summary_view
+  - Added filtering capabilities for market data
+  - Created Pydantic data models for API validation
+  - Added complete API documentation
+- Key features:
+  - Complete market summary data access through REST API
+  - Symbol-specific data retrieval
+  - Flexible filtering by price and percentage change
+  - Comprehensive API documentation with Swagger UI
+- Technical implementation:
+  - Created dedicated API package with clean separation of concerns
+  - Implemented efficient database access patterns
+  - Added proper error handling for database operations
+  - Utilized pydantic models for request and response validation
+- Use cases enabled:
+  - Frontend integration with market data
+  - Mobile app access to market summary data
+  - External system integration through RESTful API
+  - Data visualization and dashboard capabilities
+- Challenges addressed:
+  - Efficient querying of market summary view
+  - Proper type handling for database values
+  - Implementation of proper API response structures
+  - Integration with existing codebase
+
+### 2025-03-12: DuckDB Concurrency Resolution Using Parquet Files
+
+- Implemented elegant solution to DuckDB concurrency issues:
+  - Created export function to save market_summary_view to Parquet file after each pipeline run
+  - Modified API to read from Parquet file instead of accessing the database directly
+  - Eliminated file locking issues by completely decoupling read and write operations
+  - Maintained full functionality while improving reliability
+- Technical implementation:
+  - Added `export_market_summary_to_parquet()` function to the pipeline
+  - Created dedicated exports directory for Parquet files
+  - Updated API database utilities to use pandas for Parquet file reading
+  - Modified API server to check for Parquet file instead of database connection
+- Benefits:
+  - Completely eliminated database file locking issues
+  - Removed risk of database corruption or deletion
+  - Improved API performance through direct file access
+  - Simplified database access patterns
+  - Provided a clean separation between data producers and consumers
+- Future enhancements:
+  - Potential for auto-refreshing cached data in API server
+  - Option for real-time exports during the pipeline run
+  - Multiple version retention for historical comparison
+  - Compression options for larger datasets
+
 ## Challenges & Solutions
 
 ### Challenge 1: ConfigManager.get() Default Parameter Issue
@@ -470,6 +599,16 @@ This document tracks the development progress of the Angel One Data Pipeline pro
 
 **Issue**: Unicode symbols in log messages were causing encoding errors in the Windows console.  
 **Solution**: Implemented a custom logging formatter to replace Unicode characters with ASCII equivalents, ensuring cross-platform compatibility.
+
+### Challenge 5: DuckDB Concurrency Limitations
+
+**Issue**: The API was unable to access the database when the market data pipeline was running due to file locking.  
+**Solution**: Implemented a Parquet file export after each data refresh, allowing the API to read from the Parquet file instead of the database.
+
+### Challenge 6: Database Schema Management
+
+**Issue**: Table creation code was scattered across different manager classes, leading to potential inconsistencies.  
+**Solution**: Centralized all table creation in the DBManager._init_tables() method to ensure consistent schema management.
 
 ## Feature Tracking
 
