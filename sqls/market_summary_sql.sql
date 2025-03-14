@@ -11,8 +11,8 @@ futures_master as (
         tm.name,
         cast(tm.expiry as date) as expiry,
         tm.expiry,
-        tm.lotsize,
-        from token_master tm
+        tm.lotsize
+    from token_master tm
     where token_type = 'FUTURES'
 ),
 realtime_equity_latest as(
@@ -71,11 +71,11 @@ realtime_futures_latest as (
     )
     select trading_symbol,
         symbol_token,
-        ltp,
+        futures_ltp,
         futures_percent_change,
         futures_volume,
-        futures_oi,
-        from realtime_futures rf
+        futures_oi
+    from realtime_futures rf
     where rf.rn = 1
 ),
 realtime_options_latest as (
@@ -125,15 +125,20 @@ select em.token,
     rel.opn_interest,
     rel.week_low_52,
     rel.week_high_52,
-    rfl.ltp,
+    rfl.futures_ltp,
     rfl.futures_percent_change,
     rfl.futures_volume,
     rfl.futures_oi,
     rol.atm_price,
     rol.atm_price * fm.lotsize as atm_price_per_lot,
-    ROUND(((rel.ltp - rel.week_low_52) / (rel.week_high_52 - rel.week_low_52) * 200) - 100, 2) AS position_metric,
+    ROUND(
+        (
+            (rel.ltp - rel.week_low_52) / (rel.week_high_52 - rel.week_low_52) * 200
+        ) - 100,
+        2
+    ) AS position_metric
 from equity_master em
     left outer join futures_master fm on em.futures_token = fm.token
     left outer join realtime_equity_latest rel on em.name = rel.name
     left outer join realtime_futures_latest rfl on fm.token = rfl.symbol_token
-    left outer join realtime_options_latest rol on em.name = rol.underlying_name)
+    left outer join realtime_options_latest rol on em.name = rol.underlying_name
