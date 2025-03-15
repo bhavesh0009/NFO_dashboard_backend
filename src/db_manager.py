@@ -99,6 +99,20 @@ class DBManager:
                 )
             """)
             
+            # Create technical indicators table
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS technical_indicators (
+                    token VARCHAR,
+                    symbol_name VARCHAR,
+                    indicator_name VARCHAR,
+                    timestamp TIMESTAMP,
+                    value DECIMAL(18,6),
+                    period INTEGER,
+                    calculation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (token, indicator_name, period, timestamp)
+                )
+            """)
+            
             # Initialize market summary view
             self._init_market_summary_view()
             

@@ -13,6 +13,9 @@ pytz==2024.1
 pandas==2.1.0  # Required by smart-api-python for historical data
 PyYAML==6.0.1
 
+# Technical Analysis
+pandas-ta==0.3.14b0  # Technical indicator library
+
 # API Server
 fastapi==0.109.2
 uvicorn==0.27.1

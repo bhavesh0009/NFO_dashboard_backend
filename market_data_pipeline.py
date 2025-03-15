@@ -5,8 +5,9 @@ Angel One Market Data Pipeline Orchestrator
 This script orchestrates the complete data pipeline workflow:
 1. Token refresh (runs at startup)
 2. Historical equity data refresh (runs at startup)
-3. Waits until market open if necessary
-4. Runs real-time market monitoring at specified intervals
+3. Calculate technical indicators (runs after historical data refresh)
+4. Waits until market open if necessary
+5. Runs real-time market monitoring at specified intervals
 
 Usage:
     python market_data_pipeline.py [options]
@@ -38,6 +39,7 @@ from src.db_manager import DBManager
 from src.equity_market_data_manager import EquityMarketDataManager
 from src.angel_one_connector import AngelOneConnector
 from src.realtime_market_data_manager import RealtimeMarketDataManager
+from src.technical_indicator_manager import TechnicalIndicatorManager
 from src.config_manager import config
 from scripts.realtime_market_monitor import setup_console_logging, signal_handler
 
@@ -84,7 +86,7 @@ def refresh_tokens(hard_refresh=False):
 
 def refresh_historical_data(limit=None, interval="ONE_DAY", batch_size=5):
     """
-    Refresh historical equity data.
+    Refresh historical equity data and calculate technical indicators.
     
     Args:
         limit: Maximum number of equity tokens to process
@@ -161,6 +163,47 @@ def refresh_historical_data(limit=None, interval="ONE_DAY", batch_size=5):
     
     # Summary
     logger.info(f"Historical data refresh completed: {success_count} succeeded, {error_count} failed")
+    
+    # Calculate and store technical indicators after historical data refresh
+    if success_count > 0:
+        logger.info("Starting technical indicators calculation for all configured indicators...")
+        try:
+            # Initialize technical indicator manager
+            indicator_manager = TechnicalIndicatorManager(db_manager=db_manager)
+            
+            # Process all configured indicators with the same limit as historical data
+            indicator_results = indicator_manager.process_multiple_indicators(limit=limit)
+            
+            # Log summary of technical indicators processed
+            indicators_processed = indicator_results.get('indicators_processed', 0)
+            overall_success = indicator_results.get('overall_success', 0)
+            overall_errors = indicator_results.get('overall_errors', 0)
+            
+            logger.info(f"Technical indicators calculation completed:")
+            logger.info(f"- Processed {indicators_processed} indicator configurations")
+            logger.info(f"- Successfully calculated {overall_success} indicator values")
+            logger.info(f"- Encountered {overall_errors} errors")
+            
+            # Log detailed results for each indicator
+            for result in indicator_results.get('results', []):
+                indicator_name = result.get('indicator_name', '')
+                period = result.get('period', '')
+                success = result.get('success', 0)
+                total = result.get('total', 0)
+                success_rate = (success / total) * 100 if total > 0 else 0
+                
+                logger.info(f"  - {indicator_name}({period}): {success}/{total} ({success_rate:.2f}%)")
+            
+            logger.info("Technical indicators processing completed successfully")
+            
+        except ImportError as e:
+            logger.error(f"Failed to calculate technical indicators: {str(e)}")
+            logger.error("Make sure pandas_ta is installed: pip install pandas_ta")
+        except Exception as e:
+            logger.error(f"Failed to calculate technical indicators: {str(e)}")
+    else:
+        logger.warning("Skipping technical indicators calculation as no historical data was successfully fetched")
+    
     return success_count > 0
 
 def is_market_hours():

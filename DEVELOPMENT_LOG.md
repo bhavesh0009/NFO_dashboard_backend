@@ -578,6 +578,67 @@ This document tracks the development progress of the Angel One Data Pipeline pro
   - Multiple version retention for historical comparison
   - Compression options for larger datasets
 
+## 2025-04-02: Technical Indicators Implementation
+
+### Overview
+
+Added support for calculating and storing technical indicators based on historical equity data, starting with the 200-day Simple Moving Average (SMA).
+
+### Technical Implementation
+
+1. Created a new `technical_indicators` table in the database to store indicator values
+2. Implemented a dedicated `TechnicalIndicatorManager` class for calculating indicators using the pandas-ta library
+3. Modified the equity data pipeline to calculate indicators after fetching historical data
+4. Added command-line parameters to control indicator calculation
+
+### Key Components
+
+- **Database Schema**: New table with token, indicator name, period, timestamp, and value columns
+- **Calculation Logic**: Using pandas for accurate technical analysis
+- **API Integration**: Integrated with existing equity data pipeline
+
+### Benefits
+
+- **Technical Analysis**: Enables technical analysis features in the dashboard
+- **Market Analysis**: Provides insight into trend strength and market direction
+- **Extensible Design**: Framework allows easy addition of more indicators in the future
+
+### Future Enhancements
+
+- Add more indicators such as RSI, MACD, and Bollinger Bands
+- Implement indicator crossover detection
+- Add API endpoints for accessing indicator data
+
+### Code Snippets
+
+**Technical Indicator Table Schema:**
+
+```sql
+CREATE TABLE IF NOT EXISTS technical_indicators (
+    token VARCHAR,
+    symbol_name VARCHAR,
+    indicator_name VARCHAR,
+    timestamp TIMESTAMP,
+    value DECIMAL(18,6),
+    period INTEGER,
+    calculation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (token, indicator_name, period, timestamp)
+)
+```
+
+**Usage Example:**
+
+```bash
+# Fetch historical data and calculate 200-day SMA
+python scripts/fetch_all_equity_data.py
+
+# Custom indicator period (e.g., 50-day SMA)
+python scripts/fetch_all_equity_data.py --indicator-period 50
+
+# Skip indicator calculation
+python scripts/fetch_all_equity_data.py --no-indicators
+```
+
 ## Challenges & Solutions
 
 ### Challenge 1: ConfigManager.get() Default Parameter Issue
@@ -624,3 +685,71 @@ This document tracks the development progress of the Angel One Data Pipeline pro
 - **v0.1.0** (Planned) - Initial working version with Angel One connection
 - **v0.2.0** (Planned) - Token extraction and storage
 - **v1.0.0** (Planned) - Complete pipeline with automation
+
+## 2025-04-03: Technical Indicators Configuration Enhancement
+
+### Overview
+
+Enhanced the technical indicators feature by moving all configuration parameters to the config.yaml file, making the system more flexible and customizable.
+
+### Technical Implementation
+
+1. Added a dedicated `technical_indicators` section to the configuration file
+2. Implemented support for multiple indicator types (SMA, EMA, RSI) with configurable periods
+3. Updated the `TechnicalIndicatorManager` to use configuration values throughout
+4. Added a new batch processing capability for multiple indicators
+5. Added historical volatility indicator (21-day and 200-day) for risk assessment
+
+### Key Components
+
+- **Configuration-Driven Indicators**: All indicator settings now come from config.yaml
+- **Multiple Indicator Support**: Added framework for SMA, EMA, RSI, and volatility calculation
+- **Configurable Periods**: Each indicator type can have multiple configurable periods
+- **Batch Processing**: Added ability to process all configured indicators in a single run
+- **Historical Volatility**: Calculates annualized volatility based on standard deviation of returns
+
+### Benefits
+
+- **Increased Flexibility**: Easy to add or modify indicators without code changes
+- **Centralized Configuration**: All settings in one place for easier management
+- **Enhanced Usability**: Command-line parameters align with configuration options
+- **Better Performance**: Batched processing for more efficient calculation
+- **Risk Assessment**: Volatility indicator helps assess market risk and potential price swings
+
+### Sample Configuration
+
+```yaml
+# Technical Indicators Configuration
+technical_indicators:
+  default_indicator: "sma"  # Default indicator type
+  default_period: 200  # Default period for indicators
+  indicators:
+    sma:
+      periods: [50, 100, 200]  # Available periods for SMA
+      description: "Simple Moving Average"
+    ema:
+      periods: [20, 50, 200]  # Available periods for EMA
+      description: "Exponential Moving Average"
+    rsi:
+      periods: [14, 21]  # Available periods for RSI
+      description: "Relative Strength Index"
+    volatility:
+      periods: [21, 200]  # Available periods for historical volatility
+      description: "Historical Volatility (Standard Deviation of Returns)"
+  max_fetch_multiplier: 1.5  # Fetch 1.5x the required periods for safe calculation
+  batch_size: 50  # Number of tokens to process in each batch
+  enable_by_default: true  # Whether to calculate indicators by default
+```
+
+### Usage Examples
+
+```bash
+# Process all configured indicators
+python scripts/fetch_all_equity_data.py --all-indicators
+
+# Process specific indicator with custom period
+python scripts/fetch_all_equity_data.py --indicator volatility --period 21
+
+# Process with default indicator and period from config
+python scripts/fetch_all_equity_data.py
+```

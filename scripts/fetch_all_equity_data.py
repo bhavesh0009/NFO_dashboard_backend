@@ -29,6 +29,7 @@ sys.path.append(parent_dir)
 from src.equity_market_data_manager import EquityMarketDataManager
 from src.db_manager import DBManager
 from src.config_manager import config
+from src.technical_indicator_manager import TechnicalIndicatorManager
 
 def setup_logging():
     """Setup logging with file output."""
@@ -39,7 +40,8 @@ def setup_logging():
     today = datetime.now().strftime('%Y%m%d')
     logfile(os.path.join(log_dir, f'equity_market_data_{today}.log'))
 
-def fetch_all_equity_data(batch_size=5, limit=None, verbose=False, interval=None):
+def fetch_all_equity_data(batch_size=5, limit=None, verbose=False, interval=None, calculate_indicators=None, 
+                         indicator_name=None, indicator_period=None, process_all_configured_indicators=False):
     """
     Fetch and store equity market data for all equity tokens.
     
@@ -48,12 +50,29 @@ def fetch_all_equity_data(batch_size=5, limit=None, verbose=False, interval=None
         limit: Maximum number of tokens to process (None for all)
         verbose: Whether to print sample data
         interval: Data interval (ONE_MINUTE, ONE_DAY, etc.) If None, uses config default
+        calculate_indicators: Whether to calculate technical indicators after fetching data
+        indicator_name: Name of the indicator to calculate (uses config default if None)
+        indicator_period: Period for technical indicators (uses config default if None)
+        process_all_configured_indicators: Whether to process all indicators configured in config
     
     Returns:
         dict: Results summary
     """
     try:
         setup_logging()
+        
+        # Load technical indicators configuration
+        ti_config = config.get('technical_indicators') or {}
+        
+        # Use default values from config if parameters not provided
+        if calculate_indicators is None:
+            calculate_indicators = ti_config.get('enable_by_default', True)
+            
+        if indicator_name is None:
+            indicator_name = ti_config.get('default_indicator', 'sma')
+            
+        if indicator_period is None:
+            indicator_period = ti_config.get('default_period', 200)
         
         # Use default interval from config if none provided
         if interval is None:
@@ -179,6 +198,45 @@ def fetch_all_equity_data(batch_size=5, limit=None, verbose=False, interval=None
         logger.info(f"Errors: {results['errors']}")
         logger.info(f"Completion time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
+        # Calculate technical indicators if requested
+        if calculate_indicators and results["success"] > 0:
+            logger.info("=== Starting Technical Indicators Calculation ===")
+            try:
+                # Initialize technical indicator manager
+                indicator_manager = TechnicalIndicatorManager(db_manager=db_manager)
+                
+                if process_all_configured_indicators:
+                    # Process all indicators defined in the configuration
+                    logger.info("Processing all configured technical indicators")
+                    indicator_results = indicator_manager.process_multiple_indicators(limit=limit)
+                    results["indicators"] = indicator_results
+                    
+                    # Log summary of all indicators processed
+                    logger.info(f"Processed {indicator_results.get('indicators_processed', 0)} indicators " 
+                               f"with {indicator_results.get('overall_success', 0)} successful calculations")
+                else:
+                    # Process only the specified indicator and period
+                    logger.info(f"Processing {indicator_name}({indicator_period}) for equity tokens")
+                    indicator_results = indicator_manager.process_all_equity_tokens(
+                        limit=limit,
+                        period=indicator_period,
+                        indicator_name=indicator_name
+                    )
+                    results["indicators"] = indicator_results
+                    
+                    # Log summary
+                    logger.info(f"Processed {indicator_results.get('success', 0)} symbols for {indicator_name}({indicator_period})")
+                
+                logger.info("=== Technical Indicators Calculation Complete ===")
+                
+            except ImportError as e:
+                logger.error(f"Failed to calculate technical indicators: {str(e)}")
+                logger.error("Make sure pandas_ta is installed: pip install pandas_ta")
+                results["indicators"] = {"error": "pandas_ta not installed"}
+            except Exception as e:
+                logger.error(f"Failed to calculate technical indicators: {str(e)}")
+                results["indicators"] = {"error": str(e)}
+        
         # Close database connection
         db_manager.close()
         return results
@@ -194,11 +252,24 @@ def main():
     parser.add_argument("--limit", type=int, help="Maximum number of tokens to process (None for all)")
     parser.add_argument("--verbose", action="store_true", help="Print sample data")
     parser.add_argument("--interval", type=str, help="Data interval (ONE_MINUTE, FIVE_MINUTE, FIFTEEN_MINUTE, THIRTY_MINUTE, ONE_HOUR, ONE_DAY)")
+    parser.add_argument("--no-indicators", action="store_true", help="Skip technical indicator calculation")
+    parser.add_argument("--indicator", type=str, help="Technical indicator to calculate (e.g., sma, ema, rsi)")
+    parser.add_argument("--period", type=int, help="Period for technical indicator calculation")
+    parser.add_argument("--all-indicators", action="store_true", help="Process all technical indicators defined in config")
     
     args = parser.parse_args()
     
     # Run the fetch process
-    results = fetch_all_equity_data(args.batch_size, args.limit, args.verbose, args.interval)
+    results = fetch_all_equity_data(
+        batch_size=args.batch_size, 
+        limit=args.limit, 
+        verbose=args.verbose, 
+        interval=args.interval,
+        calculate_indicators=not args.no_indicators,
+        indicator_name=args.indicator,
+        indicator_period=args.period,
+        process_all_configured_indicators=args.all_indicators
+    )
     
     # Exit with success code if at least one token was processed successfully
     sys.exit(0 if results.get("success", 0) > 0 else 1)

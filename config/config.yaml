@@ -40,6 +40,27 @@ date_formats:
   expiry: "%d%b%Y"
   db_date: "%Y-%m-%d"
 
+# Technical Indicators Configuration
+technical_indicators:
+  default_indicator: "sma"  # Default indicator type
+  default_period: 200  # Default period for indicators (e.g., 200 days for SMA)
+  indicators:
+    sma:
+      periods: [50, 100, 200]  # Available periods for SMA
+      description: "Simple Moving Average"
+    ema:
+      periods: [20, 50, 200]  # Available periods for EMA
+      description: "Exponential Moving Average"
+    rsi:
+      periods: [14, 21]  # Available periods for RSI
+      description: "Relative Strength Index"
+    volatility:
+      periods: [21, 200]  # Available periods for historical volatility
+      description: "Historical Volatility (Standard Deviation of Returns)"
+  max_fetch_multiplier: 1.5  # Fetch 1.5x the required periods for safe calculation
+  batch_size: 50  # Number of tokens to process in each batch
+  enable_by_default: true  # Whether to calculate indicators by default after fetching historical data
+
 # Equity Market Data Configuration
 equity_market_data:
   start_date: "2000-01-01 09:15"  # Historical data start date
