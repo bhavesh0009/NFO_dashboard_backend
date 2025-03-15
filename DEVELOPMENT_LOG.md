@@ -48,15 +48,19 @@ This document tracks the development progress of the Angel One Data Pipeline pro
 
 1. ✅ Fix refreshToken parameter issue in getProfile() method
 2. ✅ Implement real-time market data processing
-3. ✅ Fix Windows console logging compatibility issues
-4. ✅ Enhance SQL statements for better error handling
-5. ✅ Implement options analytics with strike distance calculation
-6. ✅ Implement ATM options filtering for real-time data
-7. ✅ Add FastAPI module for market data access
-8. ✅ Resolve DuckDB concurrency issues for the API module
-9. ✅ Centralize database schema management in DBManager
-10. ✅ Implement per-iteration Parquet exports for API consumption
-11. [ ] Add data visualization for real-time market data
+3. ✅ Improve error handling for incomplete market data
+4. ✅ Implement automatic OI change calculation
+5. ✅ Add futures data processing
+6. ✅ Fix Unicode display in Windows console
+7. ✅ Implement FastAPI module for data access
+8. ✅ Create real-time Parquet exports for API consumption
+9. ✅ Implement technical indicators processing
+   - Added `TechnicalIndicatorManager` class to calculate and store technical indicators
+   - Implemented SMA, EMA, RSI, and historical volatility indicators
+   - Created configuration-driven approach with customizable periods
+   - Added wide-format summary table for efficient data access
+   - Integrated with API for indicator querying
+   - Documentation added to README.md
 
 ## Implementation Notes
 

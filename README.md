@@ -18,6 +18,7 @@ This project extracts data from Angel One API and stores it in DuckDB for analys
 - ✅ **Options Analytics**: Strike price normalization and strike distance calculation
 - ✅ **Parquet Exports**: Real-time exports for API consumption after each data refresh
 - ✅ **FastAPI Module**: REST API for accessing market data
+- ✅ **Technical Indicators**: Automatically calculated technical indicators (SMA, EMA, RSI, Volatility)
 
 ## Prerequisites
 
@@ -264,6 +265,53 @@ This focused approach to options data collection provides several advantages:
 - Reduced database storage requirements
 - Faster processing times
 - Emphasis on the most relevant trading instruments
+
+## Technical Indicators
+
+The system includes comprehensive technical indicator calculations:
+
+1. **Available Indicators**:
+   - **Simple Moving Average (SMA)**: Available periods: 20, 50, 100, 200 days
+   - **Exponential Moving Average (EMA)**: Available periods: 9, 20, 50 days
+   - **Relative Strength Index (RSI)**: Available periods: 14, 21 days
+   - **Historical Volatility**: Available periods: 21, 63, 252 days (1 month, 3 months, 1 year)
+
+2. **Indicator Summary Format**:
+   - Wide format with one row per equity symbol
+   - Organized columns for each indicator-period combination (e.g., sma_200, volatility_21)
+   - Automatically updated with latest trading day calculations
+
+3. **API Access**:
+   - `/api/v1/technical-indicators`: Get indicators for all symbols
+   - `/api/v1/technical-indicators/{symbol}`: Get indicators for a specific symbol
+
+4. **Usage Example**:
+
+   ```python
+   # Technical indicators are automatically calculated when refreshing historical data
+   python scripts/fetch_all_equity_data.py
+   
+   # Access via API
+   curl http://localhost:8000/api/v1/technical-indicators/RELIANCE
+   ```
+
+5. **Configuration**:
+   The indicators can be configured in the `config/config.yaml` file:
+
+   ```yaml
+   technical_indicators:
+     default_indicators: ["sma", "ema", "rsi", "volatility"]
+     periods:
+       sma: [20, 50, 100, 200]
+       ema: [9, 20, 50]
+       rsi: [14, 21]
+       volatility: [21, 63, 252]
+     max_fetch_multiplier: 2
+     batch_size: 50
+     enable_by_default: true
+   ```
+
+These technical indicators provide valuable insights for trading decisions and are integrated directly into the data pipeline.
 
 ## Database Schema
 

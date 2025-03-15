@@ -60,4 +60,45 @@ class MarketSummary(BaseModel):
                 "atm_price_per_lot": 16437.50,
                 "position_metric": 52.50
             }
+        }
+
+class TechnicalIndicatorsSummary(BaseModel):
+    """Technical indicators summary in wide format (one row per stock)."""
+    token: str = Field(..., description="Unique token identifier")
+    symbol_name: str = Field(..., description="Stock symbol name")
+    trade_date: date = Field(..., description="Date of the latest trading data")
+    sma_50: Optional[float] = Field(None, description="50-day Simple Moving Average")
+    sma_100: Optional[float] = Field(None, description="100-day Simple Moving Average")
+    sma_200: Optional[float] = Field(None, description="200-day Simple Moving Average")
+    ema_20: Optional[float] = Field(None, description="20-day Exponential Moving Average")
+    ema_50: Optional[float] = Field(None, description="50-day Exponential Moving Average")
+    ema_200: Optional[float] = Field(None, description="200-day Exponential Moving Average")
+    rsi_14: Optional[float] = Field(None, description="14-day Relative Strength Index")
+    rsi_21: Optional[float] = Field(None, description="21-day Relative Strength Index")
+    volatility_21: Optional[float] = Field(None, description="21-day Historical Volatility (annualized)")
+    volatility_200: Optional[float] = Field(None, description="200-day Historical Volatility (annualized)")
+    last_close: Optional[float] = Field(None, description="Last closing price")
+    last_volume: Optional[int] = Field(None, description="Last trading volume")
+    
+    class Config:
+        """Pydantic config."""
+        orm_mode = True
+        schema_extra = {
+            "example": {
+                "token": "256265",
+                "symbol_name": "RELIANCE INDUSTRIES",
+                "trade_date": "2025-03-15",
+                "sma_50": 2320.50,
+                "sma_100": 2290.75,
+                "sma_200": 2200.30,
+                "ema_20": 2330.25,
+                "ema_50": 2315.80,
+                "ema_200": 2195.40,
+                "rsi_14": 65.3,
+                "rsi_21": 58.7,
+                "volatility_21": 0.18,
+                "volatility_200": 0.22,
+                "last_close": 2345.65,
+                "last_volume": 2500000
+            }
         } 

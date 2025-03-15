@@ -194,6 +194,13 @@ def refresh_historical_data(limit=None, interval="ONE_DAY", batch_size=5):
                 
                 logger.info(f"  - {indicator_name}({period}): {success}/{total} ({success_rate:.2f}%)")
             
+            # Log summary update
+            summary_results = indicator_results.get('summary_update', {})
+            summary_success = summary_results.get('success', 0)
+            summary_total = summary_results.get('total', 0)
+            
+            logger.info(f"Technical indicators summary table updated: {summary_success}/{summary_total} equity stocks")
+            logger.info("✅ Each equity stock now has a single row with all indicators in wide format")
             logger.info("Technical indicators processing completed successfully")
             
         except ImportError as e:

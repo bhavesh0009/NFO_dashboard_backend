@@ -430,6 +430,12 @@ class TechnicalIndicatorManager:
                     "errors": indicator_result.get("errors", 0),
                     "total": indicator_result.get("total", 0)
                 })
+        
+        # Update the wide format summary table with the latest values
+        if results["indicators_processed"] > 0:
+            logger.info("Updating technical indicators summary with latest values...")
+            summary_results = self.update_indicators_summary(limit=limit)
+            results["summary_update"] = summary_results
                 
         return results
     
@@ -472,4 +478,145 @@ class TechnicalIndicatorManager:
             
         except Exception as e:
             logger.error(f"❌ Error getting latest indicator value: {str(e)}")
-            return None 
+            return None
+    
+    def update_indicators_summary(self, limit: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Update the technical_indicators_summary table with the latest values for each indicator.
+        
+        This creates a wide format table with one row per equity token and columns for each indicator.
+        Only the latest values (most recent trade date) are stored.
+        
+        Args:
+            limit: Maximum number of tokens to process (None for all)
+            
+        Returns:
+            Dictionary with update results
+        """
+        try:
+            logger.info("Updating technical indicators summary table...")
+            
+            # Get all equity tokens
+            query = """
+                SELECT token, name
+                FROM token_master
+                WHERE token_type = 'EQUITY'
+            """
+            
+            if limit:
+                query += f" LIMIT {limit}"
+                
+            tokens = self.db_manager.conn.execute(query).fetchdf()
+            
+            if tokens.empty:
+                logger.warning("No equity tokens found in database")
+                return {"success": 0, "errors": 0, "total": 0, "message": "No equity tokens found"}
+            
+            # Get all configured indicators and periods
+            indicators = self.config.get('indicators', {})
+            
+            # Track results
+            results = {
+                "success": 0,
+                "errors": 0,
+                "total": len(tokens)
+            }
+            
+            # Prepare a list to collect all summary records
+            all_summary_records = []
+            
+            # Process each token
+            for _, row in tokens.iterrows():
+                token = row['token']
+                symbol = row['name']
+                
+                try:
+                    # Get the latest trade date and closing price
+                    latest_data_query = f"""
+                        SELECT timestamp::DATE AS trade_date, close, volume
+                        FROM historical_data
+                        WHERE token = '{token}'
+                        ORDER BY timestamp DESC
+                        LIMIT 1
+                    """
+                    latest_data = self.db_manager.conn.execute(latest_data_query).fetchone()
+                    
+                    if not latest_data:
+                        logger.warning(f"No historical data found for {symbol} ({token})")
+                        results["errors"] += 1
+                        continue
+                    
+                    trade_date, last_close, last_volume = latest_data
+                    
+                    # Prepare the data for insertion
+                    summary_data = {
+                        'token': token,
+                        'symbol_name': symbol,
+                        'trade_date': trade_date,
+                        'last_close': last_close,
+                        'last_volume': last_volume
+                    }
+                    
+                    # Get the latest value for each indicator and period
+                    for indicator_name, indicator_config in indicators.items():
+                        periods = indicator_config.get('periods', [])
+                        
+                        for period in periods:
+                            column_name = f"{indicator_name}_{period}"
+                            
+                            # Get the latest value for this indicator
+                            latest_indicator_query = f"""
+                                SELECT value
+                                FROM technical_indicators
+                                WHERE token = '{token}'
+                                  AND indicator_name = '{indicator_name}'
+                                  AND period = {period}
+                                  AND timestamp::DATE = '{trade_date}'
+                                ORDER BY timestamp DESC
+                                LIMIT 1
+                            """
+                            
+                            latest_indicator = self.db_manager.conn.execute(latest_indicator_query).fetchone()
+                            
+                            if latest_indicator and latest_indicator[0] is not None:
+                                summary_data[column_name] = float(latest_indicator[0])
+                    
+                    # Add this record to our collection
+                    all_summary_records.append(summary_data)
+                    logger.debug(f"Prepared summary for {symbol} ({token})")
+                    results["success"] += 1
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error updating summary for {symbol} ({token}): {str(e)}")
+                    results["errors"] += 1
+            
+            # If we have records to insert, convert to DataFrame and do a single insert
+            if all_summary_records:
+                summary_df = pd.DataFrame(all_summary_records)
+                
+                # First, delete existing records for these tokens 
+                tokens_list = "', '".join([record['token'] for record in all_summary_records])
+                self.db_manager.conn.execute(f"DELETE FROM technical_indicators_summary WHERE token IN ('{tokens_list}')")
+                
+                # Now insert the new records with explicit column names
+                # This avoids the mismatch with the DEFAULT CURRENT_TIMESTAMP column
+                columns = ", ".join(summary_df.columns)
+                self.db_manager.conn.execute(f"""
+                    INSERT INTO technical_indicators_summary
+                    (token, symbol_name, trade_date, sma_50, sma_100, sma_200, 
+                     ema_20, ema_50, ema_200, rsi_14, rsi_21, 
+                     volatility_21, volatility_200, last_close, last_volume)
+                    SELECT {columns} FROM summary_df
+                """)
+                
+                logger.info(f"Updated technical indicators summary for {len(all_summary_records)} stocks")
+            
+            # Log results
+            logger.info(f"Technical indicators summary update completed: "
+                       f"{results['success']}/{results['total']} successful")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Error updating technical indicators summary: {str(e)}")
+            return {"success": 0, "errors": 0, "total": 0, "error": str(e)} 

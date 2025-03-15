@@ -113,6 +113,29 @@ class DBManager:
                 )
             """)
             
+            # Create technical_indicators_summary table (wide format, latest values only)
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS technical_indicators_summary (
+                    token VARCHAR,
+                    symbol_name VARCHAR,
+                    trade_date DATE,
+                    sma_50 DECIMAL(18,6),
+                    sma_100 DECIMAL(18,6),
+                    sma_200 DECIMAL(18,6),
+                    ema_20 DECIMAL(18,6),
+                    ema_50 DECIMAL(18,6),
+                    ema_200 DECIMAL(18,6),
+                    rsi_14 DECIMAL(18,6),
+                    rsi_21 DECIMAL(18,6),
+                    volatility_21 DECIMAL(18,6),
+                    volatility_200 DECIMAL(18,6),
+                    last_close DECIMAL(18,6),
+                    last_volume BIGINT,
+                    update_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (token)
+                )
+            """)
+            
             # Initialize market summary view
             self._init_market_summary_view()
             
@@ -139,11 +162,12 @@ class DBManager:
                 logger.warning("This may happen with a fresh database; proceeding with normal operation.")
             
             logger.info("✅ Database tables initialized successfully")
+            return True
         except Exception as e:
-            logger.error(f"❌ Error initializing database tables: {str(e)}")
+            logger.error(f"❌ Error initializing tables: {str(e)}")
             # Check if we need to handle database corruption
             self._handle_corrupted_database()
-            raise
+            return False
     
     def _init_market_summary_view(self):
         """Initialize the market summary view."""
@@ -480,4 +504,45 @@ class DBManager:
             
         except Exception as e:
             logger.error(f"❌ Error storing historical data for {name} ({token}): {str(e)}")
-            return False 
+            return False
+    
+    def get_technical_indicators_summary(self, token=None, symbol=None):
+        """
+        Get the technical indicators summary in wide format.
+        
+        Args:
+            token: Optional token to filter by
+            symbol: Optional symbol name to filter by (partial match)
+            
+        Returns:
+            DataFrame with the technical indicators summary
+        """
+        try:
+            query = "SELECT * FROM technical_indicators_summary"
+            where_clauses = []
+            
+            if token:
+                where_clauses.append(f"token = '{token}'")
+            
+            if symbol:
+                where_clauses.append(f"symbol_name LIKE '%{symbol}%'")
+            
+            if where_clauses:
+                query += " WHERE " + " AND ".join(where_clauses)
+            
+            # Add order by
+            query += " ORDER BY symbol_name"
+            
+            # Execute and return as dataframe
+            result = self.conn.execute(query).fetchdf()
+            
+            if result.empty:
+                logger.warning("No technical indicators summary data found")
+            else:
+                logger.info(f"Retrieved {len(result)} records from technical_indicators_summary")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Error retrieving technical indicators summary: {str(e)}")
+            return pd.DataFrame() 
