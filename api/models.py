@@ -31,6 +31,23 @@ class MarketSummary(BaseModel):
     atm_price_per_lot: Optional[float] = Field(None, description="At-the-money options price per lot")
     position_metric: Optional[float] = Field(None, description="Position metric (relative to 52-week range)")
     
+    # Technical indicators
+    sma_50: Optional[float] = Field(None, description="50-day Simple Moving Average")
+    sma_100: Optional[float] = Field(None, description="100-day Simple Moving Average")
+    sma_200: Optional[float] = Field(None, description="200-day Simple Moving Average")
+    ema_20: Optional[float] = Field(None, description="20-day Exponential Moving Average")
+    ema_50: Optional[float] = Field(None, description="50-day Exponential Moving Average")
+    ema_200: Optional[float] = Field(None, description="200-day Exponential Moving Average")
+    rsi_14: Optional[float] = Field(None, description="14-day Relative Strength Index")
+    rsi_21: Optional[float] = Field(None, description="21-day Relative Strength Index")
+    volatility_21: Optional[float] = Field(None, description="21-day Historical Volatility (annualized)")
+    volatility_200: Optional[float] = Field(None, description="200-day Historical Volatility (annualized)")
+    
+    # Technical indicator derived metrics
+    sma_200_position: Optional[str] = Field(None, description="Position relative to 200-day SMA (ABOVE_SMA200, BELOW_SMA200, AT_SMA200)")
+    ma_crossover_status: Optional[str] = Field(None, description="MA crossover status (BULLISH_CROSSOVER, BEARISH_CROSSOVER, NEUTRAL)")
+    sma_200_percent_diff: Optional[float] = Field(None, description="Percentage difference between current price and 200-day SMA")
+    
     class Config:
         """Pydantic config."""
         orm_mode = True
@@ -58,7 +75,20 @@ class MarketSummary(BaseModel):
                 "futures_oi": 75000,
                 "atm_price": 65.75,
                 "atm_price_per_lot": 16437.50,
-                "position_metric": 52.50
+                "position_metric": 52.50,
+                "sma_50": 2320.50,
+                "sma_100": 2290.75,
+                "sma_200": 2200.30,
+                "ema_20": 2330.25,
+                "ema_50": 2315.80,
+                "ema_200": 2195.40,
+                "rsi_14": 65.3,
+                "rsi_21": 58.7,
+                "volatility_21": 0.18,
+                "volatility_200": 0.22,
+                "sma_200_position": "AT_SMA200",
+                "ma_crossover_status": "BULLISH_CROSSOVER",
+                "sma_200_percent_diff": 0.05
             }
         }
 
