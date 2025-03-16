@@ -109,78 +109,6 @@ realtime_market_data:
 ## Usage
 
 ```bash
-# Test equity market data fetch (without storing)
-python main.py equity --limit 5 --verbose
-
-# Test with storing data for 10 tokens
-python main.py equity --limit 10 --store --verbose
-
-# Process with ONE_MINUTE interval instead of default ONE_DAY
-python main.py equity --limit 5 --interval ONE_MINUTE --verbose
-
-# Process all equity tokens in batches
-python main.py batch
-
-# Process with custom batch size and limit
-python main.py batch --batch-size 10 --limit 50
-
-# Process with custom interval (ONE_MINUTE, FIVE_MINUTE, etc.)
-python main.py batch --batch-size 10 --limit 50 --interval ONE_HOUR
-
-# Test connection to Angel One API
-python main.py connection
-
-# Process and store tokens
-python main.py tokens
-
-# Fetch real-time market data for equity and futures
-python main.py realtime
-
-# Fetch real-time market data for equity only (no futures)
-python main.py realtime --no-futures
-
-# Fetch real-time market data with options included
-python main.py realtime --options
-
-# Fetch real-time market data with limits
-python main.py realtime --equity-limit 10 --futures-limit 10
-
-# Fetch real-time market data with ATM options only (default behavior with options)
-python main.py realtime --options
-
-# Fetch real-time market data with options and specify 2 strikes above and below ATM
-python main.py realtime --options --strike-buffer 2
-
-# Fetch real-time market data with exact ATM options only (1 call and 1 put per future)
-python main.py realtime --options --exact-atm
-
-# Fetch all options (not just ATM)
-python main.py realtime --options --all-options
-
-# Run continuous real-time market monitor
-python scripts/realtime_market_monitor.py
-
-# Run continuous monitor with custom refresh interval (30 seconds)
-python scripts/realtime_market_monitor.py --refresh 30
-
-# Run continuous monitor for equity only
-python scripts/realtime_market_monitor.py --no-futures
-
-# Run continuous monitor with ATM options only
-python scripts/realtime_market_monitor.py --options
-
-# Run continuous monitor with exact ATM options only (1 call and 1 put per future)
-python scripts/realtime_market_monitor.py --options --exact-atm
-
-# Run continuous monitor with all options (not just ATM)
-python scripts/realtime_market_monitor.py --options --all-options
-
-# Run continuous monitor with options and specify 3 strikes above and below ATM
-python scripts/realtime_market_monitor.py --options --strike-buffer 3
-
-# Run all basic tests
-python main.py
-
 # Complete Market Data Pipeline
 # Run the complete pipeline with default settings (starts at any time, waits for market open)
 python market_data_pipeline.py
@@ -206,8 +134,11 @@ python utils/export_market_summary.py
 # Export market summary with custom output path
 python utils/export_market_summary.py --output path/to/output.parquet
 
-# Export market summary with custom SQL query
-python utils/export_market_summary.py --sql path/to/query.sql
+# Start the API server (default port: 8000)
+python scripts/run_api_server.py
+
+# Start the API server on a specific port
+python scripts/run_api_server.py --port 8008
 ```
 
 ## Data Processing
