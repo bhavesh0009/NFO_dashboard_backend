@@ -202,47 +202,28 @@ This focused approach to options data collection provides several advantages:
 The system includes comprehensive technical indicator calculations:
 
 1. **Available Indicators**:
-   - **Simple Moving Average (SMA)**: Available periods: 20, 50, 100, 200 days
-   - **Exponential Moving Average (EMA)**: Available periods: 9, 20, 50 days
+   - **Simple Moving Average (SMA)**: Available periods: 50, 100, 200 days
+   - **Exponential Moving Average (EMA)**: Available periods: 20, 50, 200 days
    - **Relative Strength Index (RSI)**: Available periods: 14, 21 days
-   - **Historical Volatility**: Available periods: 21, 63, 252 days (1 month, 3 months, 1 year)
+   - **Historical Volatility**: Available periods: 21, 200 days
 
 2. **Indicator Summary Format**:
    - Wide format with one row per equity symbol
    - Organized columns for each indicator-period combination (e.g., sma_200, volatility_21)
    - Automatically updated with latest trading day calculations
+   - Included in all market summary data
 
-3. **API Access**:
-   - `/api/v1/technical-indicators`: Get indicators for all symbols
-   - `/api/v1/technical-indicators/{symbol}`: Get indicators for a specific symbol
+3. **Derived Technical Metrics**:
+   - **SMA200 Position**: Whether price is above, below, or at the 200-day SMA
+   - **MA Crossover Status**: Bullish or bearish moving average crossover pattern
+   - **SMA200 Percent Difference**: Percentage difference between price and 200-day SMA
 
-4. **Usage Example**:
-
-   ```python
-   # Technical indicators are automatically calculated when refreshing historical data
-   python scripts/fetch_all_equity_data.py
-   
-   # Access via API
-   curl http://localhost:8000/api/v1/technical-indicators/RELIANCE
-   ```
+4. **Access via API**:
+   - Technical indicators are included in the `/api/market-summary` endpoint
+   - Filter stocks based on technical criteria using `/api/market-summary/technical-filter` endpoint
 
 5. **Configuration**:
-   The indicators can be configured in the `config/config.yaml` file:
-
-   ```yaml
-   technical_indicators:
-     default_indicators: ["sma", "ema", "rsi", "volatility"]
-     periods:
-       sma: [20, 50, 100, 200]
-       ema: [9, 20, 50]
-       rsi: [14, 21]
-       volatility: [21, 63, 252]
-     max_fetch_multiplier: 2
-     batch_size: 50
-     enable_by_default: true
-   ```
-
-These technical indicators provide valuable insights for trading decisions and are integrated directly into the data pipeline.
+   Technical indicators are configured in the `config/config.yaml` file.
 
 ## Database Schema
 
@@ -497,14 +478,15 @@ python scripts/run_api_server.py --reload
 
 Once running, the API provides the following endpoints:
 
-- **GET /api/market-summary**: Get market summary data for all symbols
+- **GET /api/market-summary**: Get market summary data for all symbols (includes technical indicators)
 - **GET /api/market-summary/{symbol}**: Get market summary for a specific symbol
-- **GET /api/market-summary/filter**: Filter market summary by various criteria
+- **GET /api/market-summary/filter**: Filter market summary by price and change criteria
+- **GET /api/market-summary/technical-filter**: Filter market data based on technical indicators
   - Query parameters:
-    - `min_ltp`: Minimum Last Traded Price
-    - `max_ltp`: Maximum Last Traded Price
-    - `min_percent_change`: Minimum percentage change
-    - `max_percent_change`: Maximum percentage change
+    - `sma_position`: Filter by position relative to SMA200 (ABOVE_SMA200, BELOW_SMA200)
+    - `crossover_status`: Filter by crossover status (BULLISH_CROSSOVER, BEARISH_CROSSOVER)
+    - `min_rsi` / `max_rsi`: Filter by RSI-14 range
+    - `min_volatility` / `max_volatility`: Filter by volatility range
 
 ### API Documentation
 
@@ -533,32 +515,17 @@ async function getAllMarketData() {
   }
 }
 
-// Get data for a specific symbol
-async function getSymbolData(symbol) {
-  try {
-    const response = await fetch(`http://localhost:8000/api/market-summary/${symbol}`);
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error(`Error fetching data for ${symbol}:`, error);
-    return null;
-  }
-}
-
-// Filter market data
-async function filterMarketData(filters) {
+// Filter market data by technical indicators
+async function filterByTechnicals(filters) {
   try {
     const params = new URLSearchParams();
     
-    if (filters.minLtp) params.append('min_ltp', filters.minLtp);
-    if (filters.maxLtp) params.append('max_ltp', filters.maxLtp);
-    if (filters.minPercentChange) params.append('min_percent_change', filters.minPercentChange);
-    if (filters.maxPercentChange) params.append('max_percent_change', filters.maxPercentChange);
+    if (filters.smaPosition) params.append('sma_position', filters.smaPosition);
+    if (filters.crossoverStatus) params.append('crossover_status', filters.crossoverStatus);
+    if (filters.minRsi) params.append('min_rsi', filters.minRsi);
+    if (filters.maxRsi) params.append('max_rsi', filters.maxRsi);
     
-    const url = `http://localhost:8000/api/market-summary/filter?${params.toString()}`;
+    const url = `http://localhost:8000/api/market-summary/technical-filter?${params.toString()}`;
     const response = await fetch(url);
     
     if (!response.ok) {
@@ -568,7 +535,7 @@ async function filterMarketData(filters) {
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error('Error filtering market data:', error);
+    console.error('Error filtering by technicals:', error);
     return [];
   }
 }
@@ -576,7 +543,7 @@ async function filterMarketData(filters) {
 
 ### Response Format
 
-The API returns data in JSON format. Here's an example of the response structure:
+The API returns data in JSON format. Here's an example of the response structure including technical indicators:
 
 ```json
 [
@@ -584,26 +551,23 @@ The API returns data in JSON format. Here's an example of the response structure
     "token": "256265",
     "symbol": "RELIANCE",
     "name": "RELIANCE INDUSTRIES",
-    "futures_token": "26000",
-    "lotsize": 250,
-    "expiry": "2025-03-27",
     "ltp": 2345.65,
     "percent_change": 1.25,
-    "open": 2320.10,
-    "high": 2350.75,
-    "low": 2315.25,
-    "close": 2318.50,
     "volume": 2500000,
-    "opn_interest": 350000,
     "week_low_52": 2100.00,
     "week_high_52": 2500.00,
     "futures_ltp": 2350.80,
-    "futures_percent_change": 1.35,
-    "futures_volume": 150000,
     "futures_oi": 75000,
-    "atm_price": 65.75,
-    "atm_price_per_lot": 16437.50,
-    "position_metric": 52.50
+    
+    "sma_50": 2320.50,
+    "sma_200": 2200.30,
+    "ema_20": 2330.25,
+    "rsi_14": 65.3,
+    "volatility_21": 32.5,
+    
+    "sma_200_position": "ABOVE_SMA200",
+    "ma_crossover_status": "BULLISH_CROSSOVER",
+    "sma_200_percent_diff": 6.61
   }
 ]
 ```
